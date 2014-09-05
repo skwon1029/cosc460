@@ -12,7 +12,8 @@ import java.util.Iterator;
 public class Tuple implements Serializable {
 
     private static final long serialVersionUID = 1L;
-
+    private final TupleDesc td;
+    private final Field[] fieldAr; //array of fields
     /**
      * Create a new tuple with the specified schema (type).
      *
@@ -20,15 +21,15 @@ public class Tuple implements Serializable {
      *           instance with at least one field.
      */
     public Tuple(TupleDesc td) {
-        // some code goes here
+        this.td=td;        
+        this.fieldAr = new Field[td.numFields()];        
     }
 
     /**
      * @return The TupleDesc representing the schema of this tuple.
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return td;
     }
 
     /**
@@ -55,8 +56,12 @@ public class Tuple implements Serializable {
      * @param i index of the field to change. It must be a valid index.
      * @param f new value for the field.
      */
-    public void setField(int i, Field f) {
-        // some code goes here
+    public void setField(int i, Field f) {    	
+    	//if the input type does not match the initial type, throw an error
+    	if(f.getType()!=td.getFieldType(i)){
+    		throw new RuntimeException(); //not sure?
+    	}
+    	fieldAr[i]=f;
     }
 
     /**
@@ -64,8 +69,7 @@ public class Tuple implements Serializable {
      * @return the value of the ith field, or null if it has not been set.
      */
     public Field getField(int i) {
-        // some code goes here
-        return null;
+        return fieldAr[i];
     }
 
     /**
@@ -77,8 +81,14 @@ public class Tuple implements Serializable {
      * where \t is any whitespace, except newline
      */
     public String toString() {
-        // some code goes here
-        throw new UnsupportedOperationException("Implement this");
+        String result = "";
+        for(int i=0;i<fieldAr.length;i++){
+        	result += getField(i);
+        	if(i!=fieldAr.length-1){
+        		result += "\t";
+        	}
+        }
+        return result;
     }
 
 }

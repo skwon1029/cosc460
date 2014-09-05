@@ -29,14 +29,17 @@ public class BufferPool {
      * constructor instead.
      */
     public static final int DEFAULT_PAGES = 50;
-
+    
+    public PageId[] pidAr; //array of PageIds
+    public Page[] pageAr; //array of Pages
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        // some code goes here
+        pidAr = new PageId[numPages];
+        pageAr = new Page[numPages];
     }
 
     public static int getPageSize() {
@@ -65,8 +68,16 @@ public class BufferPool {
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        for(int i=0; i<pidAr.length;i++){
+        	if(pidAr[i].equals(pid)){
+        		return pageAr[i];
+        	}
+        }
+        //if the page cannot be found in the bufferpool, we find it from the DbFile
+        Catalog c = Database.getCatalog();
+        int t = pid.getTableId();
+        DbFile f = c.getDatabaseFile(t); 
+        return f.readPage(pid);
     }
 
     /**

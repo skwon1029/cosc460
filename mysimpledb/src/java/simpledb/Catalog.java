@@ -17,13 +17,23 @@ import java.util.concurrent.ConcurrentHashMap;
  * @Threadsafe
  */
 public class Catalog {
-
+	
+	DbFile[] FileAr; //array of files
+	String[] NameAr; //array of names
+	String[] PFieldAr; //array of primary key fields
+	int numTable; //number of tables
+	int arraySize; //size of the arrays
+	
     /**
      * Constructor.
      * Creates a new, empty catalog.
      */
     public Catalog() {
-        // some code goes here
+    	FileAr = new DbFile[10];
+    	NameAr = new String[10];
+    	PFieldAr = new String[10];
+    	numTable = 0;
+    	arraySize = 10;
     }
 
     /**
@@ -37,7 +47,22 @@ public class Catalog {
      *                  conflict exists, use the last table to be added as the table for a given name.
      */
     public void addTable(DbFile file, String name, String pkeyField) {
-        // some code goes here
+    	//if there isn't enough space in the arrays, we double their spaces
+    	if(numTable==arraySize){
+    		DbFile[] tempF = FileAr.clone();
+    		String[] tempN = NameAr.clone();
+    		String[] tempP = PFieldAr.clone();
+    		FileAr = new DbFile[arraySize*2];
+    		NameAr = new String[arraySize*2];
+    		PFieldAr = new String[arraySize*2];    		
+    		System.arraycopy(tempF, 0, FileAr, 0, arraySize);
+    		System.arraycopy(tempN, 0, NameAr, 0, arraySize);
+    		System.arraycopy(tempP, 0, PFieldAr, 0, arraySize);
+    		arraySize = arraySize*2;    		
+    	}
+        FileAr[numTable] = file;
+        NameAr[numTable] = name;
+        PFieldAr[numTable++] = pkeyField;
     }
 
     public void addTable(DbFile file, String name) {
@@ -62,8 +87,12 @@ public class Catalog {
      * @throws NoSuchElementException if the table doesn't exist
      */
     public int getTableId(String name) throws NoSuchElementException {
-        // some code goes here
-        return 0;
+        for(int i=0; i<numTable;i++){
+        	if(NameAr[i].equals(name)){
+        		return FileAr[i].getId();
+        	}
+        }
+        throw new NoSuchElementException("table does not exist");
     }
 
     /**
@@ -74,8 +103,12 @@ public class Catalog {
      * @throws NoSuchElementException if the table doesn't exist
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
-        // some code goes here
-        return null;
+        for(int i=0; i<numTable; i++){
+        	if(FileAr[i].getId()==tableid){
+        		return FileAr[i].getTupleDesc();
+        	}
+        }
+        throw new NoSuchElementException("table does not exist");
     }
 
     /**
@@ -86,30 +119,49 @@ public class Catalog {
      *                function passed to addTable
      */
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
-        // some code goes here
-        return null;
+        for(int i=0; i<numTable; i++){
+        	if(FileAr[i].getId()==tableid){
+        		return FileAr[i];
+        	}        
+        }
+        throw new NoSuchElementException("table does not exist");
     }
 
     public String getPrimaryKey(int tableid) {
-        // some code goes here
-        return null;
+    	for(int i=0; i<numTable; i++){
+        	if(FileAr[i].getId()==tableid){
+        		return PFieldAr[i];
+        	}        
+        }
+    	throw new NoSuchElementException("table does not exist");
     }
 
     public Iterator<Integer> tableIdIterator() {
-        // some code goes here
-        return null;
+    	Integer[] tableIdAr = new Integer[numTable];
+    	for(int i=0; i<numTable;i++){
+    		tableIdAr[i]=i;
+    	}
+    	return Arrays.asList(tableIdAr).iterator();
     }
 
     public String getTableName(int id) {
-        // some code goes here
-        return null;
+    	for(int i=0; i<numTable; i++){
+        	if(FileAr[i].getId()==id){
+        		return NameAr[i];
+        	}        
+        }
+    	throw new NoSuchElementException("table does not exist");
     }
 
     /**
      * Delete all tables from the catalog
      */
     public void clear() {
-        // some code goes here
+    	FileAr = new DbFile[10];
+    	NameAr = new String[10];
+    	PFieldAr = new String[10];
+    	numTable = 0;
+    	arraySize = 10;
     }
 
     /**
