@@ -153,7 +153,7 @@ public class HeapFile implements DbFile {
 				}	
     		}
     		@Override
-    		public boolean hasNext(){ 
+    		public boolean hasNext(){     			
     			//return false if the iterator hasn't been opened
     			if(h==null){
     				return false;
@@ -171,12 +171,14 @@ public class HeapFile implements DbFile {
     			
     			//skip empty pages and see if there are any tuples
     			int tempReadPages=readPages;
+    			Iterator<Tuple> tempItr;
     			while(tempReadPages<numPages()){
     				try {
-    					HeapPageId tempPageId = new HeapPageId(tableId,pid.pageNumber()+1);
-    					HeapPage tempPage = (HeapPage)buffer.getPage(t,tempPageId,READ_WRITE);
-    					tempReadPages++;
-    					if(tempPage.iterator().hasNext()){
+    					pid = new HeapPageId(tableId,pid.pageNumber()+1);
+    					h = (HeapPage)buffer.getPage(t,pid,READ_WRITE);
+    					readPages++;
+    					heapItr = h.iterator();    					
+    					if(heapItr.hasNext()){
     						return true;
     					}
     				} catch (TransactionAbortedException e){
@@ -189,7 +191,7 @@ public class HeapFile implements DbFile {
     		}
     		
     		@Override
-    		public Tuple next(){       		
+    		public Tuple next(){
     			if(!hasNext()){
     				throw new NoSuchElementException();
     			}
@@ -197,24 +199,6 @@ public class HeapFile implements DbFile {
     			if(heapItr.hasNext()){
     				result=heapItr.next();
     				return result;
-    			}
-    			
-    			//if there isn't any tuples left, move on to the next page
-    			while(readPages<numPages()){
-    				pid = new HeapPageId(tableId,pid.pageNumber()+1);
-	    			try {
-						h = (HeapPage)buffer.getPage(t,pid,READ_WRITE);
-						heapItr = h.iterator();
-						readPages++;						
-	    			} catch (TransactionAbortedException e){
-						e.printStackTrace();
-					} catch (DbException e){
-						e.printStackTrace();					
-					}
-	    			if(heapItr.hasNext()){
-	    				result=heapItr.next();
-	    				return result;
-	    			}
     			}
 	    		throw new NoSuchElementException();
     		}

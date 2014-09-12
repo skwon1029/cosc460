@@ -5,21 +5,20 @@ After you complete lab 1, please answer the following questions.  For lab 1, the
 
 1. What is your name?  If you work with a partner, be sure to write both of your names.
 
-<Replace this text with your answer>
+	Soo Bin Kwon
 
 2. What did you think of this assignment?
 
-<Replace this text with your answer>
+	It was more challenging than I thought it would be, but it was a good way of understanding the building elements of a database.
 
 3. What was the hardest part of this assignment?
 
-<Replace this text with your answer>
+	Debugging
 
 4. Describe any missing or incomplete elements of your code.
 
-<Replace this text with your answer>
+	My code doesn't pass the testCache test in ScanTest.
 
 5. Roughly how long did you spend working on this lab?
 
-<Replace this text with your answer>
-
+	10-12 hours
