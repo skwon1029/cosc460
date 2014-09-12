@@ -12,8 +12,14 @@ import java.util.Iterator;
 public class Tuple implements Serializable {
 
     private static final long serialVersionUID = 1L;
+    
     private final TupleDesc td;
-    private final Field[] fieldAr; //array of fields
+    
+    /**
+     * array of fields
+     */
+    private final Field[] fieldAr; 
+    
     /**
      * Create a new tuple with the specified schema (type).
      *
@@ -59,7 +65,7 @@ public class Tuple implements Serializable {
     public void setField(int i, Field f) {    	
     	//if the input type does not match the initial type, throw an error
     	if(f.getType()!=td.getFieldType(i)){
-    		throw new RuntimeException(); //not sure?
+    		throw new RuntimeException();
     	}
     	fieldAr[i]=f;
     }
@@ -84,6 +90,7 @@ public class Tuple implements Serializable {
         String result = "";
         for(int i=0;i<fieldAr.length;i++){
         	result += getField(i);
+        	//add tab space if it's not the last column
         	if(i!=fieldAr.length-1){
         		result += "\t";
         	}

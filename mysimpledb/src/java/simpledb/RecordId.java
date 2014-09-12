@@ -9,6 +9,8 @@ import java.io.Serializable;
 public class RecordId implements Serializable {
 
     private static final long serialVersionUID = 1L;
+    public final PageId pid;
+    public final int tupleno;
 
     /**
      * Creates a new RecordId referring to the specified PageId and tuple
@@ -18,23 +20,22 @@ public class RecordId implements Serializable {
      * @param tupleno the tuple number within the page.
      */
     public RecordId(PageId pid, int tupleno) {
-        // some code goes here
+        this.pid=pid;
+        this.tupleno=tupleno;
     }
 
     /**
      * @return the tuple number this RecordId references.
      */
     public int tupleno() {
-        // some code goes here
-        return 0;
+        return tupleno;
     }
 
     /**
      * @return the page id this RecordId references.
      */
     public PageId getPageId() {
-        // some code goes here
-        return null;
+        return pid;
     }
 
     /**
@@ -45,10 +46,29 @@ public class RecordId implements Serializable {
      */
     @Override
     public boolean equals(Object o) {
-        // some code goes here
-        throw new UnsupportedOperationException("implement this");
+    	//return false if the specified object is null
+    	if(o == null){
+    		return false;
+    	}
+    	
+    	//return false if the object cannot be converted RecordId
+    	RecordId other;
+    	try{
+    		other = (RecordId) o;
+    	} catch(ClassCastException e){
+    		return false;
+    	}   
+    	
+    	//return false if pid or tupleno differ
+    	if(!this.pid.equals(other.pid)){
+    		return false;
+    	}
+    	if(this.tupleno!=other.tupleno){
+    		return false;
+    	}
+        return true;
     }
-
+    
     /**
      * You should implement the hashCode() so that two equal RecordId instances
      * (with respect to equals()) have the same hashCode().
@@ -57,9 +77,9 @@ public class RecordId implements Serializable {
      */
     @Override
     public int hashCode() {
-        // some code goes here
-        throw new UnsupportedOperationException("implement this");
-
+    	//concatenate hashcode of the pageId and tupleno 
+        String result = pid.hashCode()+Integer.toString(tupleno);
+        return Integer.parseInt(result);
     }
 
 }

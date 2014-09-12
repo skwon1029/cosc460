@@ -39,7 +39,8 @@ public class TupleDesc implements Serializable {
         	if(other==null){
         		return false;
         	}
-        	if(this.fieldName.equals(other.fieldName)&&this.fieldType.equals(other.fieldType)){
+        	//return true if fieldName and fileType are the same
+        	if(this.fieldName.equals(other.fieldName) && this.fieldType.equals(other.fieldType)){
         		return true;
         	}
         	return false;
@@ -100,7 +101,7 @@ public class TupleDesc implements Serializable {
      * @throws NoSuchElementException if i is not a valid field reference.
      */
     public String getFieldName(int i) throws NoSuchElementException {
-    	//if i is a valid field reference
+    	//check if i is a valid field reference
     	if(i>=0 && i<numFields()){
     		return TDAr[i].fieldName;
     	} throw new NoSuchElementException("field reference is invalid");
@@ -115,7 +116,7 @@ public class TupleDesc implements Serializable {
      * @throws NoSuchElementException if i is not a valid field reference.
      */
     public Type getFieldType(int i) throws NoSuchElementException {
-    	//if i is a valid field reference
+    	//check if i is a valid field reference
     	if(i>=0 && i<numFields()){
     		return TDAr[i].fieldType;
     	} throw new NoSuchElementException("field reference is invalid");
@@ -129,6 +130,7 @@ public class TupleDesc implements Serializable {
      * @throws NoSuchElementException if no field with a matching name is found.
      */
     public int fieldNameToIndex(String name) throws NoSuchElementException {
+    	//check if input is a valid field name
     	if(name==null){
     		throw new NoSuchElementException("null is not a valid field name");
     	}

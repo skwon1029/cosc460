@@ -18,11 +18,11 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class Catalog {
 	
-	DbFile[] FileAr; //array of files
-	String[] NameAr; //array of names
-	String[] PFieldAr; //array of primary key fields
-	int numTable; //number of tables
-	int arraySize; //size of the arrays
+	DbFile[] FileAr; 	//array of files
+	String[] NameAr; 	//array of names
+	String[] PFieldAr; 	//array of primary key fields
+	int numTable; 		//number of tables
+	int arraySize; 		//size of the arrays
 	
     /**
      * Constructor.
@@ -220,4 +220,3 @@ public class Catalog {
         }
     }
 }
-

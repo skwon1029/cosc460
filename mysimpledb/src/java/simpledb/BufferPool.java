@@ -30,8 +30,8 @@ public class BufferPool {
      */
     public static final int DEFAULT_PAGES = 50;
     
-    public PageId[] pidAr; //array of PageIds
-    public Page[] pageAr; //array of Pages
+    public PageId[] pidAr; 	//array of PageIds
+    public Page[] pageAr; 	//array of Pages
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -69,14 +69,16 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {
         for(int i=0; i<pidAr.length;i++){
-        	if(pidAr[i].equals(pid)){
-        		return pageAr[i];
-        	}
+        	if(pidAr[i]!=null){
+        		if(pidAr[i].equals(pid)){
+        			return pageAr[i];
+        		}
+       		}
         }
-        //if the page cannot be found in the bufferpool, we find it from the DbFile
+        //if the page cannot be found in the buffer pool, we find it from the DbFile
         Catalog c = Database.getCatalog();
         int t = pid.getTableId();
-        DbFile f = c.getDatabaseFile(t); 
+        DbFile f = c.getDatabaseFile(t);
         return f.readPage(pid);
     }
 

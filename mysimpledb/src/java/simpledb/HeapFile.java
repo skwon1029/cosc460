@@ -15,6 +15,10 @@ import java.util.*;
  */
 public class HeapFile implements DbFile {
 
+	private final File f;
+	private final TupleDesc td;
+	private final int tableId;
+	
     /**
      * Constructs a heap file backed by the specified file.
      *
@@ -22,7 +26,9 @@ public class HeapFile implements DbFile {
      *          file.
      */
     public HeapFile(File f, TupleDesc td) {
-        // some code goes here
+        this.f=f;
+        this.td=td;
+        this.tableId=f.getAbsoluteFile().hashCode();
     }
 
     /**
@@ -31,8 +37,7 @@ public class HeapFile implements DbFile {
      * @return the File backing this HeapFile on disk.
      */
     public File getFile() {
-        // some code goes here
-        return null;
+        return f;
     }
 
     /**
@@ -45,8 +50,7 @@ public class HeapFile implements DbFile {
      * @return an ID uniquely identifying this HeapFile.
      */
     public int getId() {
-        // some code goes here
-        throw new UnsupportedOperationException("implement this");
+        return tableId;
     }
 
     /**
@@ -55,14 +59,37 @@ public class HeapFile implements DbFile {
      * @return TupleDesc of this DbFile.
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        throw new UnsupportedOperationException("implement this");
+        return td;
     }
 
     // see DbFile.java for javadocs
-    public Page readPage(PageId pid) {
-        // some code goes here
-        return null;
+    public Page readPage(PageId pid) {    	
+    	Page result;						//page to return
+        InputStream fileInput = null;				
+        BufferedInputStream buffInput = null;
+        int pageSize = BufferPool.getPageSize();
+        byte[] data = new byte[pageSize];	//byte array to temporarily store data from input stream
+        int offset = pid.pageNumber();
+        
+        //try to open the file and return page
+        try{        	
+        	fileInput = new FileInputStream(f);
+        	buffInput = new BufferedInputStream(fileInput);
+        	buffInput.skip(pageSize*offset);
+        	fileInput.read(data);
+        	result = new HeapPage((HeapPageId)pid,data);
+        	return result;
+        }catch(IOException e){        	
+        	return null;
+        }finally{
+        	try{
+        		if(fileInput!=null){
+        			buffInput.close();
+        			fileInput.close();
+        		}        		
+        	}catch(IOException e){
+        	}        	
+        }
     }
 
     // see DbFile.java for javadocs
@@ -75,8 +102,9 @@ public class HeapFile implements DbFile {
      * Returns the number of pages in this HeapFile.
      */
     public int numPages() {
-        // some code goes here
-        return 0;
+        long fileSize = f.length();
+        int pageSize = BufferPool.getPageSize();
+        return (int)fileSize/pageSize;
     }
 
     // see DbFile.java for javadocs
@@ -97,8 +125,121 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public DbFileIterator iterator(TransactionId tid) {
-        // some code goes here
-        return null;
+    	final TransactionId t = tid;    	
+    	class tempIterator implements DbFileIterator{
+    		
+    		BufferPool buffer;
+    		HeapPageId pid; 		
+    		HeapPage h = null;
+    		Permissions READ_WRITE;
+    		Iterator<Tuple> heapItr;	//heap iterator
+    		int readPages = 0; 			//keeps track of the number of pages read
+			
+			public tempIterator(){
+				buffer = Database.getBufferPool();
+				pid = new HeapPageId(tableId,0);
+			}
+			
+			@Override
+    		public void open(){
+    			try {
+					h = (HeapPage)buffer.getPage(t,pid,READ_WRITE);
+					heapItr = h.iterator();
+					readPages = 1;
+				} catch (TransactionAbortedException e){
+					e.printStackTrace();
+				} catch (DbException e){
+					e.printStackTrace();					
+				}	
+    		}
+    		@Override
+    		public boolean hasNext(){ 
+    			//return false if the iterator hasn't been opened
+    			if(h==null){
+    				return false;
+    			}    			
+    			
+    			//return true if there are tuples left in current page 
+    			if(heapItr.hasNext()){	
+    				return true;
+    			}    		
+    			
+    			//return false if current page is the last page
+    			if(readPages==numPages()){
+    				return false;
+    			}
+    			
+    			//skip empty pages and see if there are any tuples
+    			int tempReadPages=readPages;
+    			while(tempReadPages<numPages()){
+    				try {
+    					HeapPageId tempPageId = new HeapPageId(tableId,pid.pageNumber()+1);
+    					HeapPage tempPage = (HeapPage)buffer.getPage(t,tempPageId,READ_WRITE);
+    					tempReadPages++;
+    					if(tempPage.iterator().hasNext()){
+    						return true;
+    					}
+    				} catch (TransactionAbortedException e){
+    					e.printStackTrace();
+    				} catch (DbException e){
+    					e.printStackTrace();					
+    				}
+    			}
+    			return false;    			
+    		}
+    		
+    		@Override
+    		public Tuple next(){       		
+    			if(!hasNext()){
+    				throw new NoSuchElementException();
+    			}
+    			Tuple result;
+    			if(heapItr.hasNext()){
+    				result=heapItr.next();
+    				return result;
+    			}
+    			
+    			//if there isn't any tuples left, move on to the next page
+    			while(readPages<numPages()){
+    				pid = new HeapPageId(tableId,pid.pageNumber()+1);
+	    			try {
+						h = (HeapPage)buffer.getPage(t,pid,READ_WRITE);
+						heapItr = h.iterator();
+						readPages++;						
+	    			} catch (TransactionAbortedException e){
+						e.printStackTrace();
+					} catch (DbException e){
+						e.printStackTrace();					
+					}
+	    			if(heapItr.hasNext()){
+	    				result=heapItr.next();
+	    				return result;
+	    			}
+    			}
+	    		throw new NoSuchElementException();
+    		}
+    		
+    		@Override
+    		public void rewind(){
+				pid = new HeapPageId(tableId,0);
+    			try {
+					h = (HeapPage)buffer.getPage(t,pid,READ_WRITE);
+					heapItr = h.iterator();
+					readPages=1;					
+    			} catch (TransactionAbortedException e){
+					e.printStackTrace();
+				} catch (DbException e){
+					e.printStackTrace();					
+				}			
+    		}
+    		@Override
+    		public void close(){
+    			h = null;
+    			heapItr = null;
+    		}
+    	}     
+    	DbFileIterator result = new tempIterator();
+        return result;
     }
 
 }
