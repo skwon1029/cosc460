@@ -20,6 +20,8 @@ public class Tuple implements Serializable {
      */
     private final Field[] fieldAr; 
     
+    private RecordId rid = null;
+    
     /**
      * Create a new tuple with the specified schema (type).
      *
@@ -42,9 +44,8 @@ public class Tuple implements Serializable {
      * @return The RecordId representing the location of this tuple on disk. May
      * be null.
      */
-    public RecordId getRecordId() {
-        // some code goes here
-        return null;
+    public RecordId getRecordId() {    	
+        return rid;
     }
 
     /**
@@ -53,7 +54,7 @@ public class Tuple implements Serializable {
      * @param rid the new RecordId for this tuple.
      */
     public void setRecordId(RecordId rid) {
-        // some code goes here
+    	this.rid = rid;
     }
 
     /**
@@ -92,7 +93,7 @@ public class Tuple implements Serializable {
         	result += getField(i);
         	//add tab space if it's not the last column
         	if(i!=fieldAr.length-1){
-        		result += "\t";
+        		result += " ";
         	}
         }
         return result;

@@ -17,7 +17,10 @@ public class HeapPage implements Page {
     private final byte header[];
     private final Tuple tuples[];
     private final int numSlots;
-
+    
+    private boolean dirty;
+    private TransactionId dirtytid;
+    
     byte[] oldData;
     private final Byte oldDataLock = new Byte((byte) 0);
 
@@ -239,9 +242,25 @@ public class HeapPage implements Page {
      * @throws DbException if this tuple is not on this page, or tuple slot is
      *                     already empty.
      */
-    public void deleteTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+    public void deleteTuple(Tuple t) throws DbException {    	
+        RecordId rid = t.getRecordId();
+        if(rid==null){
+        	throw new DbException("tuple could not be found");
+        }        
+        if(!rid.pid.equals(pid)){
+        	throw new DbException("tuple could not be found");
+        }
+        int tupleNum = rid.tupleno();
+        
+        if(isSlotUsed(tupleNum)){
+        	tuples[tupleNum]=null;
+        	int index = tupleNum/8;
+        	int bitPos = tupleNum%8;
+        	header[index] = (byte)(header[index] & ~(1 << bitPos));
+        }
+        else{
+        	throw new DbException("tuple slot is empty");
+        }
     }
 
     /**
@@ -253,8 +272,24 @@ public class HeapPage implements Page {
      *                     is mismatch.
      */
     public void insertTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+    	if(getNumEmptySlots()==0){
+    		throw new DbException("no empty slots");
+    	}
+    	for(int i=0;i<numSlots;i++){
+    		if(!isSlotUsed(i)){
+    			//update tuple & RecordId
+    			RecordId rid = new RecordId(getId(),i);
+    			t.setRecordId(rid);
+    			tuples[i]=t; 
+    			
+    			//update header
+    			int index = i/8;
+    			int bitPos = i%8;
+    			header[index]=(byte)(header[index] | (1 << bitPos));
+    			return;
+    		}
+    	}
+        throw new DbException("tuple slot is empty");
     }
 
     /**
@@ -262,17 +297,18 @@ public class HeapPage implements Page {
      * that did the dirtying
      */
     public void markDirty(boolean dirty, TransactionId tid) {
-        // some code goes here
-        // not necessary for lab1
+        this.dirty=dirty;
+        this.dirtytid=tid;
     }
 
     /**
      * Returns the tid of the transaction that last dirtied this page, or null if the page is not dirty
      */
     public TransactionId isDirty() {
-        // some code goes here
-        // Not necessary for lab1
-        return null;      
+        if(dirty){
+        	return dirtytid;
+        }    
+        return null;
     }
 
     /**
