@@ -181,11 +181,12 @@ public class BufferPool {
     	DbFile f = Database.getCatalog().getDatabaseFile(tableId);
     	ArrayList<Page> dirtyPages = f.insertTuple(tid, t); //pages that were dirtied
     	Iterator<Page> dirtyItr = dirtyPages.iterator();		
+    	
     	while (dirtyItr.hasNext()){
     		HeapPage dirtyPage = (HeapPage)dirtyItr.next();
     		PageId pid = dirtyPage.getId();
     		dirtyPage.markDirty(true, tid);
-    		//find page
+    		//find page in buffer
     		for(int i=0; i<pidAr.length;i++){
     			if(pid.equals(pidAr[i])){
     				accessAr[i] = accessNum++;	//page was accessed
@@ -210,16 +211,22 @@ public class BufferPool {
      */
     public void deleteTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-    	PageId pid = t.getRecordId().pid;
-    	for(int i=0; i<pidAr.length;i++){
-    		//find page
-    		if(pid.equals(pidAr[i])){
-    			HeapPage h = (HeapPage)pageAr[i];
-    			h.deleteTuple(t);
-    			h.markDirty(true, tid);
-    			pageAr[i]=h;				//update page
-    			accessAr[i] = accessNum++;	//page was accessed
-    		}
+    	int tableId = t.getRecordId().getPageId().getTableId();
+    	DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+    	ArrayList<Page> dirtyPages = file.deleteTuple(tid, t); //pages that were dirtied
+    	Iterator<Page> dirtyItr = dirtyPages.iterator();
+    	
+    	while (dirtyItr.hasNext()){
+    		HeapPage dirtyPage = (HeapPage)dirtyItr.next();
+    		PageId pid = dirtyPage.getId();
+    		dirtyPage.markDirty(true, tid);
+    		//find page in buffer
+    		for(int i=0; i<pidAr.length;i++){
+    			if(pid.equals(pidAr[i])){
+    				accessAr[i] = accessNum++;	//page was accessed
+    				pageAr[i]=dirtyPage;		//update page
+    			}
+    		}    		
     	}
     }
 
