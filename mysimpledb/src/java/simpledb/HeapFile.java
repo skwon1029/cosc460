@@ -63,36 +63,26 @@ public class HeapFile implements DbFile {
     }
 
     // see DbFile.java for javadocs
-    public Page readPage(PageId pid) {    	
-    	Page result;						//page to return
-        InputStream fileInput = null;				
-        BufferedInputStream buffInput = null;
-        int pageSize = BufferPool.getPageSize();
-        byte[] data = new byte[pageSize];	//byte array to temporarily store data from input stream
-        int offset = pid.pageNumber();
+    public Page readPage(PageId pid) {   
+        int pageSize = BufferPool.getPageSize();        
+        int offset = pid.pageNumber() * pageSize;
         
-        //try to open the file and return page
+        //byte array to temporarily store data from input stream
+        byte[] data = new byte[pageSize];
+        
+        //open the file and return page
         try{        	
-        	fileInput = new FileInputStream(f);
-        	buffInput = new BufferedInputStream(fileInput);
-        	buffInput.skip(pageSize*offset);
-        	fileInput.read(data);
-        	result = new HeapPage((HeapPageId)pid,data);
+        	BufferedInputStream buffInput = new BufferedInputStream(new FileInputStream(f));
+        	buffInput.skip(offset);
+        	buffInput.read(data);
+        	Page result = new HeapPage((HeapPageId)pid,data);
+        	buffInput.close();
         	return result;
         }catch(IOException e){        	
         	return null;
-        }finally{
-        	try{
-        		if(fileInput!=null){
-        			buffInput.close();
-        			fileInput.close();
-        		}        		
-        	}catch(IOException e){
-        	}        	
         }
     }
 
-    // wasn't tested by unit test?
     public void writePage(Page page) throws IOException {
         int offset = BufferPool.getPageSize() * page.getId().pageNumber();
         byte[] data = page.getPageData();
@@ -117,19 +107,24 @@ public class HeapFile implements DbFile {
     // see DbFile.java for javadocs
     public ArrayList<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-    	ArrayList<Page> result = new ArrayList<Page>();
+    	ArrayList<Page> result = new ArrayList<Page>(); //arraylist to return
     	BufferPool buffer = Database.getBufferPool();
     	HeapPageId pid = null;
     	HeapPage p = null;
+    	
+    	//go through pages and find empty slot
         for(int i=0;i<numPages();i++){
         	pid = new HeapPageId(tableId,i);
         	p = (HeapPage)buffer.getPage(tid, pid, null);
+        	
+        	//if the page has space, insert tuple
         	if(p.getNumEmptySlots()!=0){        		
         		p.insertTuple(t);
         		result.add(p);
         		return result;
         	}
         }
+        //if there aren't any pages with space
         //create a new page in the file
         byte[] newPageData = HeapPage.createEmptyPageData();
         HeapPageId newPid = new HeapPageId(tableId,numPages());
@@ -139,12 +134,10 @@ public class HeapFile implements DbFile {
         newPage.insertTuple(t);        
         newPageData = newPage.getPageData();
         
-        //add the new page to file
-        OutputStream output;        
+        //add the new page to file      
         try{ 
-	        output = new BufferedOutputStream(new FileOutputStream(f,true));
+        	OutputStream output = new BufferedOutputStream(new FileOutputStream(f,true));
 	        output.write(newPageData);
-	        //output.flush();
 	        output.close();
 	        result.add(newPage);
 	        return result;
@@ -161,18 +154,10 @@ public class HeapFile implements DbFile {
         PageId pid = rid.getPageId();
         BufferPool buffer = Database.getBufferPool();
         HeapPage p = null;
-        try{
-        	p = (HeapPage)buffer.getPage(tid, pid, null);
-        	p.deleteTuple(t);
-        	result.add(p);
-        	return result;
-        }catch (TransactionAbortedException e){
-			e.printStackTrace();
-		} catch (DbException e){
-			e.printStackTrace();					
-		}  
+        p = (HeapPage)buffer.getPage(tid, pid, null);
+        p.deleteTuple(t);
         result.add(p);
-    	return result;
+        return result;
     }
 
     // see DbFile.java for javadocs

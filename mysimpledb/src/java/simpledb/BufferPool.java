@@ -36,22 +36,24 @@ public class BufferPool {
     
     public PageId[] pidAr; 	//array of PageIds
     public Page[] pageAr; 	//array of Pages
-    public int[] accessAr;
-    public int numPages;	//actual number of pages (not the same as pidAr.length)
-        
-    //public HashMap<PageId,Page> pages;
+    public int numPages;	//actual number of pages in buffer 
+    						//(not the same as pidAr.length)
+    
+    public int[] accessAr;	//see evictPage() for description
+    public int accessNum;	//see evictPage() for description
+    
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        pidAr = new PageId[numPages];
-        pageAr = new Page[numPages];
-        accessAr = new int[numPages];
+        pidAr = new PageId[numPages];	//all set to null
+        pageAr = new Page[numPages];	//all set to null
+        accessAr = new int[numPages];	//all set to zero
+        accessNum = 1;
         this.numPages = 0;
         
-        //pages = new HashMap<PageId,Page>(numPages);
     }
 
     public static int getPageSize() {
@@ -83,16 +85,15 @@ public class BufferPool {
         for(int i=0; i<pidAr.length;i++){
         	if(pidAr[i]!=null){
         		if(pidAr[i].equals(pid)){
-        			accessAr[i]++;
+        			accessAr[i] = accessNum++; //page was accessed
         			return pageAr[i];
         		}
        		}
         }
         
         //if the page cannot be found in the buffer pool, find it from the DbFile
-        Catalog c = Database.getCatalog();
         int t = pid.getTableId();
-        DbFile f = c.getDatabaseFile(t);
+        DbFile f = Database.getCatalog().getDatabaseFile(t);
         Page newPage = f.readPage(pid);
         
         //if there is no space in the buffer pool, evict page
@@ -106,6 +107,7 @@ public class BufferPool {
         		if(pidAr[i]==null){
         			pidAr[i]=pid;
         			pageAr[i]=newPage;
+        			accessAr[i]=0;
         			numPages++;
         			return newPage;
         		}
@@ -174,20 +176,20 @@ public class BufferPool {
      * @param tableId the table to add the tuple to
      * @param t       the tuple to add
      */
-    //wasn't tested
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
     	DbFile f = Database.getCatalog().getDatabaseFile(tableId);
-    	ArrayList<Page> dirtiedFiles = f.insertTuple(tid, t);
-    	Iterator<Page> dirtyItr = dirtiedFiles.iterator();
+    	ArrayList<Page> dirtyPages = f.insertTuple(tid, t); //pages that were dirtied
+    	Iterator<Page> dirtyItr = dirtyPages.iterator();		
     	while (dirtyItr.hasNext()){
-    		HeapPage h = (HeapPage)dirtyItr.next();
-    		PageId pid = h.getId();
-    		h.markDirty(true, tid);
+    		HeapPage dirtyPage = (HeapPage)dirtyItr.next();
+    		PageId pid = dirtyPage.getId();
+    		dirtyPage.markDirty(true, tid);
+    		//find page
     		for(int i=0; i<pidAr.length;i++){
     			if(pid.equals(pidAr[i])){
-    				accessAr[i]++;
-    				pageAr[i]=h;
+    				accessAr[i] = accessNum++;	//page was accessed
+    				pageAr[i]=dirtyPage;		//update page
     			}
     		}
     	}
@@ -206,17 +208,17 @@ public class BufferPool {
      * @param tid the transaction deleting the tuple.
      * @param t   the tuple to delete
      */
-    //wasn't tested
     public void deleteTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
     	PageId pid = t.getRecordId().pid;
     	for(int i=0; i<pidAr.length;i++){
+    		//find page
     		if(pid.equals(pidAr[i])){
     			HeapPage h = (HeapPage)pageAr[i];
     			h.deleteTuple(t);
     			h.markDirty(true, tid);
-    			pageAr[i]=h;
-    			accessAr[i]++;
+    			pageAr[i]=h;				//update page
+    			accessAr[i] = accessNum++;	//page was accessed
     		}
     	}
     }
@@ -249,14 +251,14 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
-    	DbFile f;
     	for(int i=0; i<numPages; i++){
     		if(pidAr[i].equals(pid)){
     			Page p = pageAr[i];
+    			//find dirty page
     			if(p.isDirty()!=null){
     				try{
-	    				f = Database.getCatalog().getDatabaseFile(pid.getTableId());
-	    				f.writePage(p);
+    					DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
+	    				f.writePage(p); //write page to disk
     				}catch(IOException e){
     					throw new IOException("cannot find page");
     				}
@@ -278,14 +280,32 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-    	int min = accessAr[0];
-    	int index = 0;
+    	/* 
+    	 * LRU page eviction policy
+    	 * 
+    	 * Array accessAr keeps track of the order of page access. Every time
+    	 * a page is accessed through getPage, insertTuple, or deleteTuple,
+    	 * the corresponding integer in accessAr will be updated to the number
+    	 * of pages that has been accessed so far, including the page itself.
+    	 * Pages that have never been accessed will have zero in acessAr.
+    	 * Higher the value in accessAr, more recently the corresponding
+    	 * page was accessed.
+    	 * 
+    	 * Code below gets the page with the smallest value in accessAr
+    	 * and evicts the page. 
+    	 */
+    	
+    	//choose page
+    	int min = accessAr[0];	//smallest value
+    	int index = 0;			//index of the page with the smallest value
     	for(int i=1;i<pidAr.length;i++){
     		if(min>accessAr[i]){
     			min = accessAr[i];
     			index = i;    					
     		}    	
     	}
+    	
+    	//evict the chosen page
     	try{
 	    	flushPage(pidAr[index]);
 	    	pidAr[index]=null;

@@ -19,7 +19,7 @@ public class HeapPage implements Page {
     private final int numSlots;
     
     private boolean dirty;
-    private TransactionId dirtytid;
+    private TransactionId dirtyTid;
     
     byte[] oldData;
     private final Byte oldDataLock = new Byte((byte) 0);
@@ -250,15 +250,17 @@ public class HeapPage implements Page {
         if(!rid.pid.equals(pid)){
         	throw new DbException("tuple could not be found");
         }
-        int tupleNum = rid.tupleno();
         
+        int tupleNum = rid.tupleno();
         if(isSlotUsed(tupleNum)){
+        	//delete tuple
         	tuples[tupleNum]=null;
+        	
+        	//update header
         	int index = tupleNum/8;
         	int bitPos = tupleNum%8;
         	header[index] = (byte)(header[index] & ~(1 << bitPos));
-        }
-        else{
+        }else{
         	throw new DbException("tuple slot is empty");
         }
     }
@@ -297,8 +299,8 @@ public class HeapPage implements Page {
      * that did the dirtying
      */
     public void markDirty(boolean dirty, TransactionId tid) {
-        this.dirty=dirty;
-        this.dirtytid=tid;
+        this.dirty = dirty;
+        this.dirtyTid = tid;
     }
 
     /**
@@ -306,7 +308,7 @@ public class HeapPage implements Page {
      */
     public TransactionId isDirty() {
         if(dirty){
-        	return dirtytid;
+        	return dirtyTid;
         }    
         return null;
     }
@@ -315,7 +317,7 @@ public class HeapPage implements Page {
      * Returns the number of empty slots on this page.
      */
     public int getNumEmptySlots() {
-    	int num = 0;		//number of empty slots
+    	int num = 0;			//number of empty slots
     	int numReadTuples = 0;	//number of tuples we went through
     	
     	//increment if the header bit equals 0
