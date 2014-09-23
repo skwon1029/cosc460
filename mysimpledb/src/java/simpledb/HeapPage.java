@@ -254,7 +254,8 @@ public class HeapPage implements Page {
         int tupleNum = rid.tupleno();
         if(isSlotUsed(tupleNum)){
         	//delete tuple
-        	tuples[tupleNum]=null;
+        	t.setRecordId(null);
+        	tuples[tupleNum]=null;        	
         	
         	//update header
         	int index = tupleNum/8;
