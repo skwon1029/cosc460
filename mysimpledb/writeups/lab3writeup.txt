@@ -3,18 +3,47 @@ Report for Lab 3
 
 Answer the questions from the lab description here.  Questions 8 and 9 do not require answers.
 
-1.
-2.
-3.
-4.
-5.
+1. Aggregate, Delete, Filter, HashEquiJoin, Insert, Join, Operator, OrderBy, Project, SeqScan, TupleIterator
+2. Aggreagte, Delete, Filter, HashEquiJoin, Insert, Join, OrderBy, Project
+3. Select, project, join -- not cross product, union, intersection, difference
+4. Filter is a subclass of Operator and Operator already has hasNext() and next() defined. 
+5.  
+while IterR.hasNext():
+	Tuple t = IterR.next()
+	if t.name matches "Alice":
+		return t
+return null
+
 6.
+list = []
+while IterR.hasNext():
+	Tuple t1 = IterR.next()
+	while IterS.hasNext():
+		Tuple t2 = IterS.next()
+		if t1 and t2 match join predicate:
+			tNew = merge(t1, t2)
+			list.append(tNew)
+	IterS.rewind()
+return list
+
 7.
+while:
+	if not IterS.hasNext() or t1 equals null:
+		if IterR.hasNext():
+			t1 = IterR.next()
+			IterS.rewind()
+		else: //gone through all tuples
+			return null
+	while IterS.hasNext():		
+		t2 = IterS.next()
+		if t1 and t2 match join predicate:
+			tNew = merge(t1, t2)
+			return tNew
 
 After you complete lab 3, please answer the following questions.  
 
 1. What is your name?  If you work with a partner, be sure to write both of your names.
-
+	
 <Replace this text with your answer>
 
 2. What did you think of this assignment?
