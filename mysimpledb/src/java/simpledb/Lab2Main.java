@@ -56,7 +56,6 @@ public class Lab2Main {
             
             //flush changed data to disk
             Database.getBufferPool().flushAllPages();
-            
             f.close();
             Database.getBufferPool().transactionComplete(tid);
         } catch (Exception e) {

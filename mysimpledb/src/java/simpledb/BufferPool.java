@@ -236,8 +236,10 @@ public class BufferPool {
      * break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        for(int i=0;i<numPages;i++){
-        	flushPage(pidAr[i]);        	
+        for(int i=0;i<pidAr.length;i++){
+        	if(pidAr[i]!=null){
+	        	flushPage(pidAr[i]);
+        	}
         }
     }
 
@@ -258,19 +260,20 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
-    	for(int i=0; i<numPages; i++){
-    		if(pidAr[i].equals(pid)){
-    			Page p = pageAr[i];
-    			//find dirty page
-    			if(p.isDirty()!=null){
-    				try{
-    					DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
-	    				f.writePage(p); //write page to disk
-    				}catch(IOException e){
-    					throw new IOException("cannot find page");
-    				}
-    			}
-    		}
+    	for(int i=0; i<pidAr.length; i++){
+	    	if(pidAr[i].equals(pid)){
+	    		Page p = pageAr[i];
+	    		//find dirty page
+	    		if(p.isDirty()!=null){
+	    			try{
+	    				DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());	    					
+		   				f.writePage(p); //write page to disk
+		   				return;
+	    			}catch(IOException e){
+	    				throw new IOException("cannot find page");
+	    			}
+	    		}
+	    	}
     	}
     }
 

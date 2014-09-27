@@ -64,15 +64,16 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {   
-        int pageSize = BufferPool.getPageSize();        
+        int pageSize = BufferPool.getPageSize();
         int offset = pid.pageNumber() * pageSize;
-        
+
         //byte array to temporarily store data from input stream
         byte[] data = new byte[pageSize];
         
         //open the file and return page
         try{        	
-        	BufferedInputStream buffInput = new BufferedInputStream(new FileInputStream(f));
+        	FileInputStream input = new FileInputStream(f);
+        	BufferedInputStream buffInput = new BufferedInputStream(input);
         	buffInput.skip(offset);
         	buffInput.read(data);
         	Page result = new HeapPage((HeapPageId)pid,data);
@@ -88,7 +89,7 @@ public class HeapFile implements DbFile {
         byte[] data = page.getPageData();
         try{
 	        RandomAccessFile file = new RandomAccessFile(f,"rw");
-	        file.write(data,offset,data.length);        
+	        file.write(data,offset,data.length);
 	        file.close();
         }catch(IOException e){
         	throw new IOException("cannot write page");
@@ -260,6 +261,5 @@ public class HeapFile implements DbFile {
     	DbFileIterator result = new tempIterator();
         return result;
     }
-
 }
 
