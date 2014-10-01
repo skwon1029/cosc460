@@ -261,19 +261,21 @@ public class BufferPool {
      */
     private synchronized void flushPage(PageId pid) throws IOException {
     	for(int i=0; i<pidAr.length; i++){
-	    	if(pidAr[i].equals(pid)){
-	    		Page p = pageAr[i];
-	    		//find dirty page
-	    		if(p.isDirty()!=null){
-	    			try{
-	    				DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());	    					
-		   				f.writePage(p); //write page to disk
-		   				return;
-	    			}catch(IOException e){
-	    				throw new IOException("cannot find page");
-	    			}
-	    		}
-	    	}
+    		if(pidAr[i]!=null){
+    			if(pidAr[i].equals(pid)){	    		
+		    		Page p = pageAr[i];
+		    		//find dirty page
+		    		if(p.isDirty()!=null){
+		    			try{
+		    				DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());	    					
+			   				f.writePage(p); //write page to disk
+			   				return;
+		    			}catch(IOException e){
+		    				throw new IOException("cannot find page");
+		    			}
+		    		}
+		    	}
+    		}
     	}
     }
 

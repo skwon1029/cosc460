@@ -197,7 +197,7 @@ public class HeapFile implements DbFile {
     			}    			
     			
     			//return true if there are tuples left in current page 
-    			if(heapItr.hasNext()){	
+    			if(heapItr.hasNext()){
     				return true;
     			}    		
     			
@@ -212,7 +212,7 @@ public class HeapFile implements DbFile {
     				try {
     					pid = new HeapPageId(tableId,pid.pageNumber()+1);
     					h = (HeapPage)buffer.getPage(t,pid,null);
-    					readPages++;
+    					tempReadPages++;
     					heapItr = h.iterator();    					
     					if(heapItr.hasNext()){
     						return true;
