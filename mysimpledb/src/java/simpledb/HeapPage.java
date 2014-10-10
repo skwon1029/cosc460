@@ -388,6 +388,7 @@ public class HeapPage implements Page {
     				}
     				//return true if the next slot is used
     				if(tempIndex<numSlots && isSlotUsed(tempIndex)){
+    					index = tempIndex;
     					return true;
     				}
     			}
@@ -399,20 +400,7 @@ public class HeapPage implements Page {
     			if(!hasNext()){
     				throw new NoSuchElementException();
     			}
-    			if(tuples[index]!=null){
-    				return tuples[index++];
-    			}
-    			//skip empty slots
-    			while(tuples[index]==null){  
-    				index++;
-    				if(index==numSlots){
-    					throw new NoSuchElementException();
-    				}
-    				if(tuples[index]!=null){
-        				return tuples[index++];
-        			}
-    			}
-    			throw new NoSuchElementException();
+    			return tuples[index++];
     		}
     		
     		@Override

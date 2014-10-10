@@ -207,12 +207,11 @@ public class HeapFile implements DbFile {
     			}
     			
     			//skip empty pages and see if there are any tuples
-    			int tempReadPages=readPages;
-    			while(tempReadPages<numPages()){
+    			while(readPages<numPages()){
     				try {
     					pid = new HeapPageId(tableId,pid.pageNumber()+1);
     					h = (HeapPage)buffer.getPage(t,pid,null);
-    					tempReadPages++;
+    					readPages++;
     					heapItr = h.iterator();    					
     					if(heapItr.hasNext()){
     						return true;
