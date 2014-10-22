@@ -1,11 +1,19 @@
 package simpledb;
 
+import java.util.*;
+
 /**
  * Knows how to compute some aggregate over a set of StringFields.
  */
 public class StringAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
+    private Op what;
+    private int gbfield;
+    private Type gbfieldtype;
+    private int afield;
+    // a map of groupVal -> AggregateFields
+    private HashMap<String, AggregateFields> groups;
 
     /**
      * Aggregate constructor
@@ -18,7 +26,13 @@ public class StringAggregator implements Aggregator {
      */
 
     public StringAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
-        // some code goes here
+        this.what = what;
+        if (what != Op.COUNT)
+            throw new IllegalArgumentException("Invalid operator type " + what);
+        this.gbfield = gbfield;
+        this.afield = afield;
+        this.gbfieldtype = gbfieldtype;
+        this.groups = new HashMap<String, AggregateFields>();
     }
 
     /**
@@ -27,7 +41,17 @@ public class StringAggregator implements Aggregator {
      * @param tup the Tuple containing an aggregate field and a group-by field
      */
     public void mergeTupleIntoGroup(Tuple tup) {
-        // some code goes here
+        String groupVal = "";
+        if (gbfield != NO_GROUPING) {
+            groupVal = tup.getField(gbfield).toString();
+        }
+        AggregateFields agg = groups.get(groupVal);
+        if (agg == null)
+            agg = new AggregateFields(groupVal);
+
+        agg.count++;
+
+        groups.put(groupVal, agg);
     }
 
     /**
@@ -39,8 +63,52 @@ public class StringAggregator implements Aggregator {
      * aggregate specified in the constructor.
      */
     public DbIterator iterator() {
-        // some code goes here
-        throw new UnsupportedOperationException("please implement me for lab3");                           // cosc460
+        LinkedList<Tuple> result = new LinkedList<Tuple>();
+        int aggField = 1;
+        TupleDesc td;
+
+        if (gbfield == NO_GROUPING) {
+            td = new TupleDesc(new Type[]{Type.INT_TYPE});
+            aggField = 0;
+        } else {
+            td = new TupleDesc(new Type[]{gbfieldtype, Type.INT_TYPE});
+        }
+
+        // iterate over groups and create summary tuples
+        for (String groupVal : groups.keySet()) {
+            AggregateFields agg = groups.get(groupVal);
+            Tuple tup = new Tuple(td);
+
+            if (gbfield != NO_GROUPING) {
+                if (gbfieldtype == Type.INT_TYPE)
+                    tup.setField(0, new IntField(new Integer(groupVal)));
+                else tup.setField(0, new StringField(groupVal, Type.STRING_LEN));
+            }
+
+            switch (what) {
+                case COUNT:
+                    tup.setField(aggField, new IntField(agg.count));
+                    break;
+            }
+
+            result.add(tup);
+        }
+
+        DbIterator retVal = null;
+        retVal = new TupleIterator(td, Collections.unmodifiableList(result));
+        return retVal;
     }
 
+    /**
+     * A helper struct to store accumulated aggregate values.
+     */
+    private class AggregateFields {
+        public String groupVal;
+        public int count;
+
+        public AggregateFields(String groupVal) {
+            this.groupVal = groupVal;
+            count = 0;
+        }
+    }
 }

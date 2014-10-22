@@ -2,6 +2,8 @@ package simpledb;
 
 import java.util.*;
 
+import simpledb.Aggregator.Op;
+
 /**
  * The Aggregation operator that computes an aggregate (e.g., sum, avg, max,
  * min). Note that we only support aggregates over a single column, grouped by a
@@ -10,6 +12,14 @@ import java.util.*;
 public class Aggregate extends Operator {
 
     private static final long serialVersionUID = 1L;
+    private TupleDesc td = null;
+    private DbIterator child = null;
+    private DbIterator it = null;
+    private Aggregator agg = null;
+    private Aggregator.Op aop = null;
+    private String gFieldName = null;
+    private String aFieldName = null;
+    private int afield, gfield;
 
     /**
      * Constructor.
@@ -25,7 +35,83 @@ public class Aggregate extends Operator {
      * @param aop    The aggregation operator to use
      */
     public Aggregate(DbIterator child, int afield, int gfield, Aggregator.Op aop) {
-        // some code goes here
+        this.child = child;
+        this.afield = afield;
+        this.gfield = gfield;
+        this.aop = aop;
+        if (this.aop == Op.SC_AVG)
+            if (this.gfield == Aggregator.NO_GROUPING)
+                this.afield = 0;
+            else {
+                this.afield = 1;
+                this.gfield = 0;
+            }
+        TupleDesc child_td = child.getTupleDesc();
+
+        if (child_td.getFieldType(afield) == Type.INT_TYPE) {
+            this.agg = new IntegerAggregator(gfield,
+                    gfield == Aggregator.NO_GROUPING ? null
+                            : child_td.getFieldType(gfield), afield, aop);
+        } else {
+            this.agg = new StringAggregator(gfield,
+                    gfield == Aggregator.NO_GROUPING ? null
+                            : child_td.getFieldType(gfield), afield, aop);
+        }
+
+        if (gfield == Aggregator.NO_GROUPING) {
+            int nFields = 1;
+            if (aop == Op.SUM_COUNT)
+                nFields = 2;
+            Type typeAr[] = new Type[nFields];
+            String fields[] = new String[nFields];
+
+            typeAr[0] = Type.INT_TYPE;//child_td.getFieldType(afield);
+
+            if (aop == Op.SUM_COUNT) {
+                typeAr[1] = Type.INT_TYPE;
+                fields[1] = "";
+            }
+
+//	    if (aop == Op.SC_AVG) {
+//		fields[0] = nameOfAggregatorOp(Op.SC_AVG) + "("
+//		        + child_td.getFieldName(afield) + ")";
+//
+//	    } else
+            fields[0] = nameOfAggregatorOp(aop) + "("
+                    + child_td.getFieldName(afield) + ")";
+            aFieldName = fields[0];
+
+            td = new TupleDesc(typeAr, fields);
+        } else {
+            int nFields = 2;
+            if (aop == Op.SUM_COUNT)
+                nFields = 3;
+
+            Type typeAr[] = new Type[nFields];
+            String fields[] = new String[nFields];
+
+            typeAr[0] = child_td.getFieldType(gfield);
+            typeAr[1] = Type.INT_TYPE;//child_td.getFieldType(afield);
+            fields[0] = child_td.getFieldName(gfield);
+            gFieldName = fields[0];
+
+//	    if (aop == Op.SC_AVG) {
+//		fields[1] = nameOfAggregatorOp(Op.SC_AVG) + "("
+//		        + child_td.getFieldName(afield) + ")";
+//
+//	    } else
+            fields[1] = nameOfAggregatorOp(aop) + "("
+                    + child_td.getFieldName(afield) + ")";
+
+            if (aop == Op.SUM_COUNT) {
+                typeAr[2] = Type.INT_TYPE;
+                fields[2] = "";
+            }
+
+            aFieldName = fields[1];
+
+            td = new TupleDesc(typeAr, fields);
+        }
     }
 
     /**
@@ -34,8 +120,7 @@ public class Aggregate extends Operator {
      * {@link simpledb.Aggregator#NO_GROUPING}
      */
     public int groupField() {
-        // some code goes here
-        return -1;
+        return this.gfield;
     }
 
     /**
@@ -44,16 +129,14 @@ public class Aggregate extends Operator {
      * null;
      */
     public String groupFieldName() {
-        // some code goes here
-        return null;
+        return this.gFieldName;
     }
 
     /**
      * @return the aggregate field
      */
     public int aggregateField() {
-        // some code goes here
-        return -1;
+        return this.afield;
     }
 
     /**
@@ -61,16 +144,14 @@ public class Aggregate extends Operator {
      * tuples
      */
     public String aggregateFieldName() {
-        // some code goes here
-        return null;
+        return this.aFieldName;
     }
 
     /**
      * @return return the aggregate operator
      */
     public Aggregator.Op aggregateOp() {
-        // some code goes here
-        return null;
+        return this.aop;
     }
 
     public static String nameOfAggregatorOp(Aggregator.Op aop) {
@@ -79,7 +160,10 @@ public class Aggregate extends Operator {
 
     public void open() throws NoSuchElementException, DbException,
             TransactionAbortedException {
-        // some code goes here
+        child.open();
+        if (it != null)
+            it.open();
+        super.open();
     }
 
     /**
@@ -90,12 +174,25 @@ public class Aggregate extends Operator {
      * aggregate. Should return null if there are no more tuples.
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-        // some code goes here
+        // Actually perform the aggregation
+        if (it == null) {
+            while (child.hasNext()) {
+                Tuple t = child.next();
+                agg.mergeTupleIntoGroup(t);
+            }
+
+            it = agg.iterator();
+            it.open();
+        }
+
+        if (it.hasNext())
+            return it.next();
         return null;
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+        close();
+        open();
     }
 
     /**
@@ -110,23 +207,25 @@ public class Aggregate extends Operator {
      * iterator.
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return td;
     }
 
     public void close() {
-        // some code goes here
+        super.close();
+        child.close();
+        if (it != null) {
+            it.close();
+        }
     }
 
     @Override
     public DbIterator[] getChildren() {
-        // some code goes here
-        return null;
+        return new DbIterator[]{this.child};
     }
 
     @Override
     public void setChildren(DbIterator[] children) {
-        // some code goes here
+        this.child = children[0];
     }
 
 }
