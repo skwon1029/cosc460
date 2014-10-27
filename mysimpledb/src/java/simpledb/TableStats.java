@@ -2,6 +2,9 @@ package simpledb;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Vector;
+
+import simpledb.Predicate.Op;
 
 /**
  * TableStats represents statistics (e.g., histograms) about base tables in a
@@ -62,7 +65,12 @@ public class TableStats {
      * histograms.
      */
     static final int NUM_HIST_BINS = 100;
-
+    private Vector<Object> histVec = new Vector<Object>();
+    private Vector<Object> distVec = new Vector<Object>();
+    private DbFile f = null;
+    private int ioCostPerPage = 0;
+    private int numFields = 0;
+    private int numTups = 0;
     /**
      * Create a new TableStats object, that keeps track of statistics on each
      * column of a table
@@ -71,15 +79,93 @@ public class TableStats {
      * @param ioCostPerPage The cost per page of IO. This doesn't differentiate between
      *                      sequential-scan IO and disk seeks.
      */
-    public TableStats(int tableid, int ioCostPerPage) {
-        // For this function, you'll have to get the
-        // DbFile for the table in question,
-        // then scan through its tuples and calculate
-        // the values that you need.
-        // You should try to do this reasonably efficiently, but you don't
-        // necessarily have to (for example) do everything
-        // in a single scan of the table.
-        // some code goes here
+    public TableStats(int tableid, int ioCostPerPage) {    	    	
+    	this.ioCostPerPage = ioCostPerPage;
+    	f = Database.getCatalog().getDatabaseFile(tableid);
+    	numFields = f.getTupleDesc().numFields();
+    	
+    	Vector<Field> minArr = new Vector<Field>();
+    	Vector<Field> maxArr = new Vector<Field>();
+    	
+    	DbFileIterator it = f.iterator(null);
+    	try{
+			it.open();
+		}catch(DbException|TransactionAbortedException e){
+			e.printStackTrace();
+		}
+    	
+    	//compute the minimum and maximum values for each field
+    	try{
+			if(it.hasNext()){
+				Tuple t = it.next();
+				numTups += 1;
+				for(int i=0; i<numFields;i++){
+					minArr.add(t.getField(i));
+					maxArr.add(t.getField(i));    			
+				}    		
+			}
+		}catch(NoSuchElementException|DbException|TransactionAbortedException e){
+			e.printStackTrace();
+		}   	
+    	try{
+			while(it.hasNext()){
+				Tuple t = it.next();
+				numTups += 1;
+				for(int i=0; i<numFields; i++){
+					Field v = t.getField(i);
+					if(v.compare(Predicate.Op.LESS_THAN, minArr.get(i))){
+						minArr.set(i,v);
+					}
+					else if(v.compare(Op.GREATER_THAN, maxArr.get(i))){
+						maxArr.set(i,v);
+					}
+				}    		
+			}
+		}catch(NoSuchElementException | DbException | TransactionAbortedException e){
+			e.printStackTrace();
+		}
+    	
+    	//create histogram for each field
+    	for(int i=0; i<numFields;i++){
+    		Type t = f.getTupleDesc().getFieldType(i);
+    		if(t.equals(Type.INT_TYPE)){
+    			int min = ((IntField)minArr.get(i)).getValue();
+    			int max = ((IntField)maxArr.get(i)).getValue();
+    			IntHistogram his = new IntHistogram(NUM_HIST_BINS,min,max);
+    			IntHistogram distHis = new IntHistogram(max-min+1,min,max);
+    			histVec.add(his);
+    			distVec.add(distHis);
+    		}else{
+    			StringHistogram his = new StringHistogram(NUM_HIST_BINS);
+    			histVec.add(his);
+    			distVec.add(his);
+    		}
+    	}
+    	
+    	//add values to the histograms
+    	try{
+			it.rewind();
+		}catch(DbException|TransactionAbortedException e) {
+			e.printStackTrace();
+		}
+    	try{
+			while(it.hasNext()){
+				Tuple t = it.next();
+				for(int i=0; i<numFields; i++){
+					Field v = t.getField(i);
+					if(v.getType().equals(Type.INT_TYPE)){
+						((IntHistogram)histVec.get(i)).addValue(((IntField)v).getValue());
+						((IntHistogram)distVec.get(i)).addValue(((IntField)v).getValue());
+					}else{
+						((StringHistogram)histVec.get(i)).addValue(((StringField)v).getValue());
+						((StringHistogram)distVec.get(i)).addValue(((StringField)v).getValue());
+					}
+				}    		
+			}
+		}catch(NoSuchElementException | DbException | TransactionAbortedException e){
+			e.printStackTrace();
+		} 
+    	it.close();
     }
 
     /**
@@ -94,9 +180,8 @@ public class TableStats {
      *
      * @return The estimated cost of scanning the table.
      */
-    public double estimateScanCost() {
-        // some code goes here
-        return 0;
+    public double estimateScanCost(){
+        return ((HeapFile)f).numPages() * this.ioCostPerPage;
     }
 
     /**
@@ -107,9 +192,11 @@ public class TableStats {
      * @return The estimated cardinality of the scan with the specified
      * selectivityFactor
      */
-    public int estimateTableCardinality(double selectivityFactor) {
-        // some code goes here
-        return 0;
+    public int estimateTableCardinality(double selectivityFactor) {    	
+    	if(selectivityFactor>0 && selectivityFactor<1/numTups){
+    		return 1;    		
+    	}
+    	return (int)(Math.ceil(numTups * selectivityFactor));
     }
 
     /**
@@ -125,9 +212,16 @@ public class TableStats {
      * @return The number of distinct values of the field.
      */
     public int numDistinctValues(int field) {
-        // some code goes here
-        throw new UnsupportedOperationException("implement me");
-
+    	int result = 0;
+        if(f.getTupleDesc().getFieldType(field).equals(Type.INT_TYPE)){
+        	int arr[] = ((IntHistogram)distVec.get(field)).getBuckets();
+        	for(int i=0; i<arr.length; i++){
+        		if(arr[i]>0){
+        			result += 1;
+        		}
+        	}
+        }
+        return result;
     }
 
     /**
@@ -141,8 +235,13 @@ public class TableStats {
      * predicate
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
-        // some code goes here
-        return 1.0;
+        if(constant.getType().equals(Type.INT_TYPE)){
+        	IntHistogram his = (IntHistogram)histVec.get(field);
+        	return his.estimateSelectivity(op, ((IntField)constant).getValue());        	
+        }else{
+        	StringHistogram his = (StringHistogram)histVec.get(field);
+        	return his.estimateSelectivity(op, ((StringField)constant).getValue());
+        }
     }
 
 }

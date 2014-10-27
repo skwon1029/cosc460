@@ -100,6 +100,9 @@ public class IntHistogram {
     	}
     	
     	if(op.equals(Predicate.Op.EQUALS)){
+    		if(v>max || v<min){
+    			return 0.0;
+    		}
     		if(b==buckets-1){
     			return (double)arr[b]/last_width/tupNum;
     		}
@@ -153,6 +156,13 @@ public class IntHistogram {
         return -1.0;        
     }
 
+    /*
+     * Returns the integer array that stores the numbers of values that fall into each bucket
+     */
+    public int[] getBuckets(){
+    	return arr;
+    }
+    
     /**
      * @return A string describing this histogram, for debugging purposes
      */
