@@ -4,22 +4,32 @@ Questions
 Answer these questions.  With each question is a hint as to which part of the code walk you might consult to find the answer.
 
 (Walk thru 1) How many instances of the TableStats class are created?
+	One for each table in the query
 
 (Walk thru 4) In class, we said a logical plan is a relational algebra tree.  That's not how it's represented in SimpleDB.  How is it represented? 
+	It is a list of logical join nodes, represented by a collection of table scan nodes, join nodes, filter nodes, a select list, and a group by field.
 
 (Walk thru 5) The physicalPlan is a relational algebra tree.  Describe the basic shape of this tree in terms of which ops go where.
+	The tree is going to be a left-deep tree, meaning the result of each join will be the outer relation for the next join.
 
 (Walk thru 5) Suppose a query applies multiple filters to a single table.  For example, the query described in the lab write up filters on both actor first and last name.  In such cases, how is the selectivity estimated?  
-
+	The selectivity would be the multiplication of the selectivity of all filters. 
+	
 (Walk thru 5) Explain the meaning of this if statement.  Why should the subplanMap have size 0 or 1 at this point?
 
     if (subplanMap.size() > 1) {
         throw new ParsingException("Query does not include join expressions joining all nodes!");
     }
+    
+    Before this if statement, we are removing iterators from the subplanMap as we add tables to the equivMap.
+    If we do have 2 or more iterators in the subplanMap, it means we have at least one more join expression to include in our plan.
 
 (Walk thru 7) What does computeCostAndCardOfSubplan do when the joinSet contains only a single join, the joinToRemove?
+	It assumes that we only have a left query and sets the cost and cardinality for the right query to null.
 
 (Walk thru 9) Suppose we are considering a join between a table A and the result of a join between B and C.  Assume table A is the outer relation in the join.  What is the cost estimate?  Your expression should be in terms of the sizes (# pages, # tuples) of the base relations A, B, C.
-
+	If we assume the join between B and C is an equality join (B.x=C.y),
+	Cost of join = (# pages in A) + (# tuples in A) * ((# tuples in B)*(# tuples in C)/max(# distinct B.x, # distinct C.y))
+	
 (Walk thru 10) In lab 3, you write Join and Filter operators.  Both of these support the DbIterator interface.  When/where are these iterators called?
-
+	These iterators are called in LogicalPlan.physicalPlan. The DbIterators are added to subplanMap through SeqScan.

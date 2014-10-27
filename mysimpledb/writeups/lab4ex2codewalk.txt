@@ -20,11 +20,20 @@ Walk thru 2: simpledb.Parser.processNextStatement()
 
 Walk thru 3: simpledb.Parser.handleQueryStatement()
 
-	<fill this in>	
+	This method creates a new Query object and gets its logical plan by calling
+		parseQueryLogicalPlan()
+	and its physical plan by calling
+		LogicalPlan.physicalPlan()
+	QueryPlanVisualizer is invoked if available.
+	
+	This returns a Query object. 	
 
 Walk thru 4: simpledb.Parser.parseQueryLogicalPlan()
 
-	<fill this in>
+	This method takes a ZQuery object, parses the query, and builds the logical plan based on the query.
+	This includes parsing clauses including FROM, WHERE, GROUP BY, and SELECT.
+	
+	This returns a LogicalPlan object with all the necessary fields and variables specified in the query.
 
 	Note: this method is rather long and complex.  Your walk thru should focus
 	on the high-level ideas.  Specifically, explain how SQL query is processed to construct the LogicalPlan.  
@@ -37,27 +46,41 @@ Walk thru 5: simpledb.LogicalPlan.physicalPlan()
 		- statsMap
 		- subplanMap
 
-	<fill this in>
+	equivMap keeps track of table aliases of all the LogicalJoinNodes.
+	filterSelectivities keeps track of selectivities of all the LogicalJoinNodes.
+	statsMap keeps track of statistics (histogram) of the base tables of all queries.
+	subplanMap keeps track of iterators of all queries.
+	
+	This returns a DbIterator object that represents the physical plan built using the data structures above.
 
 Walk thru 6: simpledb.JoinOptimizer.orderJoins()
 
-	<fill this in>
+	This method orders given join operations by evaluating possible join orders and picking the best order through dynamic programming.
+	We start with looking for the best plan for one join, and increase the number of joins.
+		
+	This returns a Vector<LogicalJoinNode> object with the optimized order of join operations. 
 
 Walk thru 7: JoinOptimizer.computeCostAndCardOfSubplan()
 
-	<fill this in>
+	This method provides he best join ordering for joining 'joinToRemove' with 'joinSet'-'joinToRemove.'
+	This serves as a helper method for the method JoinOptimizer.orderJoins().
+	
+	This returns a CostCard object that contains the best join ordering and its cost and cardinality.
 
 Walk thru 8: JoinOptimizer.estimateJoinCost()
 
-	<fill this in>
+	This method gives the estimated cost of a given join based on the costs and cardinalities of the left and right queries.
+	This returns the estimated cost as a double. 
 
 Walk thru 9: JoinOptimizer.estimateJoinCardinality()
 
-	<fill this in>
+	This method gives the estimated cardinality of a given join based on the costs and table statistics of the left and right queries.
+	This returns the estimated cardinality as an integer.
 
 Walk thru 10 query.execute()
 	
 	Note: This is called inside simpledb.Parser.processNextStatement().  Refer back to Walk thru 2.
 
-	<fill this in>
+	This method prints out the field names, starts(opens) the query iterator, and prints out the resulting tuples.
+	This returns nothing.
 
