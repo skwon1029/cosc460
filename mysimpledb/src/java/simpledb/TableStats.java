@@ -65,8 +65,17 @@ public class TableStats {
      * histograms.
      */
     static final int NUM_HIST_BINS = 100;
+    
+    /*
+     * Array of histograms (either IntHistogram or StringHistogram)
+     */
     private Vector<Object> histVec = new Vector<Object>();
+    
+    /*
+     * Array of histograms with buckets for all distinct values
+     */
     private Vector<Object> distVec = new Vector<Object>();
+    
     private DbFile f = null;
     private int ioCostPerPage = 0;
     private int numFields = 0;
@@ -81,9 +90,12 @@ public class TableStats {
      */
     public TableStats(int tableid, int ioCostPerPage) {    	    	
     	this.ioCostPerPage = ioCostPerPage;
-    	f = Database.getCatalog().getDatabaseFile(tableid);
-    	numFields = f.getTupleDesc().numFields();
+    	this.f = Database.getCatalog().getDatabaseFile(tableid);
+    	this.numFields = f.getTupleDesc().numFields();
     	
+    	/*
+    	 * Arrays for minimum and maximum values for each field
+    	 */
     	Vector<Field> minArr = new Vector<Field>();
     	Vector<Field> maxArr = new Vector<Field>();
     	
@@ -99,6 +111,7 @@ public class TableStats {
 			if(it.hasNext()){
 				Tuple t = it.next();
 				numTups += 1;
+				//first set both minimum and maximum values to the values of first tuple
 				for(int i=0; i<numFields;i++){
 					minArr.add(t.getField(i));
 					maxArr.add(t.getField(i));    			
@@ -107,6 +120,7 @@ public class TableStats {
 		}catch(NoSuchElementException|DbException|TransactionAbortedException e){
 			e.printStackTrace();
 		}   	
+    	//then go through each tuple and find the minimum and maximum
     	try{
 			while(it.hasNext()){
 				Tuple t = it.next();
@@ -181,6 +195,7 @@ public class TableStats {
      * @return The estimated cost of scanning the table.
      */
     public double estimateScanCost(){
+    	//number of pages * cost to read a page
         return ((HeapFile)f).numPages() * this.ioCostPerPage;
     }
 
@@ -213,8 +228,16 @@ public class TableStats {
      */
     public int numDistinctValues(int field) {
     	int result = 0;
+    	//count all the non-empty buckets of histograms in distVec
         if(f.getTupleDesc().getFieldType(field).equals(Type.INT_TYPE)){
         	int arr[] = ((IntHistogram)distVec.get(field)).getBuckets();
+        	for(int i=0; i<arr.length; i++){        		
+        		if(arr[i]>0){
+        			result += 1;
+        		}
+        	}
+        }else{
+        	int arr[] = ((StringHistogram)distVec.get(field)).hist.getBuckets();
         	for(int i=0; i<arr.length; i++){
         		if(arr[i]>0){
         			result += 1;
