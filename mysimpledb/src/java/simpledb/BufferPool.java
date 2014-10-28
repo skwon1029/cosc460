@@ -34,13 +34,13 @@ public class BufferPool {
      */
     public static final int DEFAULT_PAGES = 50;
     
-    public PageId[] pidAr; 	//array of PageIds
-    public Page[] pageAr; 	//array of Pages
-    public int numPages;	//actual number of pages in buffer 
+    private PageId[] pidAr; //array of PageIds
+    private Page[] pageAr; 	//array of Pages
+    private int numPages;	//actual number of pages in buffer 
     						//(not the same as pidAr.length)
     
-    public int[] accessAr;	//see evictPage() for description
-    public int accessNum;	//see evictPage() for description
+    private int[] accessAr;	//see evictPage() for description
+    private int accessNum;	//see evictPage() for description
     
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -184,15 +184,7 @@ public class BufferPool {
     	
     	while (dirtyItr.hasNext()){
     		HeapPage dirtyPage = (HeapPage)dirtyItr.next();
-    		PageId pid = dirtyPage.getId();
     		dirtyPage.markDirty(true, tid);
-    		//find page in buffer
-    		for(int i=0; i<pidAr.length;i++){
-    			if(pid.equals(pidAr[i])){
-    				accessAr[i] = accessNum++;	//page was accessed
-    				pageAr[i]=dirtyPage;		//update page
-    			}
-    		}
     	}
     	dirtyItr.remove();
     }
@@ -218,16 +210,9 @@ public class BufferPool {
     	
     	while (dirtyItr.hasNext()){
     		HeapPage dirtyPage = (HeapPage)dirtyItr.next();
-    		PageId pid = dirtyPage.getId();
     		dirtyPage.markDirty(true, tid);
-    		//find page in buffer
-    		for(int i=0; i<pidAr.length;i++){
-    			if(pid.equals(pidAr[i])){
-    				accessAr[i] = accessNum++;	//page was accessed
-    				pageAr[i]=dirtyPage;		//update page
-    			}
-    		}    		
     	}
+    	dirtyItr.remove();
     }
 
     /**
@@ -325,7 +310,7 @@ public class BufferPool {
 	    	accessAr[index]=0;
 	    	numPages--;
     	}catch(IOException e){
-    		e.printStackTrace();
+    		throw new DbException("cannot evit page");
     	}
     }
 

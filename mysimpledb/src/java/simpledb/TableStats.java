@@ -100,14 +100,16 @@ public class TableStats {
     	Vector<Field> maxArr = new Vector<Field>();
     	
     	DbFileIterator it = f.iterator(null);
-    	try{
+    	try {
 			it.open();
-		}catch(DbException|TransactionAbortedException e){
+		} catch (DbException e) {
 			e.printStackTrace();
-		}
+		} catch (TransactionAbortedException e) {
+			e.printStackTrace();
+		}		
     	
-    	//compute the minimum and maximum values for each field
-    	try{
+    	//compute the minimum and maximum values for each field    	
+		try {
 			if(it.hasNext()){
 				Tuple t = it.next();
 				numTups += 1;
@@ -117,9 +119,14 @@ public class TableStats {
 					maxArr.add(t.getField(i));    			
 				}    		
 			}
-		}catch(NoSuchElementException|DbException|TransactionAbortedException e){
+		} catch (NoSuchElementException e) {
 			e.printStackTrace();
-		}   	
+		} catch (DbException e) {
+			e.printStackTrace();
+		} catch (TransactionAbortedException e) {
+			e.printStackTrace();
+		}
+		 	
     	//then go through each tuple and find the minimum and maximum
     	try{
 			while(it.hasNext()){
@@ -135,7 +142,11 @@ public class TableStats {
 					}
 				}    		
 			}
-		}catch(NoSuchElementException | DbException | TransactionAbortedException e){
+    	} catch (NoSuchElementException e) {
+			e.printStackTrace();
+		} catch (DbException e) {
+			e.printStackTrace();
+		} catch (TransactionAbortedException e) {
 			e.printStackTrace();
 		}
     	
@@ -159,7 +170,9 @@ public class TableStats {
     	//add values to the histograms
     	try{
 			it.rewind();
-		}catch(DbException|TransactionAbortedException e) {
+		} catch (DbException e) {
+			e.printStackTrace();
+		} catch (TransactionAbortedException e) {
 			e.printStackTrace();
 		}
     	try{
@@ -176,9 +189,13 @@ public class TableStats {
 					}
 				}    		
 			}
-		}catch(NoSuchElementException | DbException | TransactionAbortedException e){
+    	} catch (NoSuchElementException e) {
 			e.printStackTrace();
-		} 
+		} catch (DbException e) {
+			e.printStackTrace();
+		} catch (TransactionAbortedException e) {
+			e.printStackTrace();
+		}
     	it.close();
     }
 

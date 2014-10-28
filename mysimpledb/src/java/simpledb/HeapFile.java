@@ -169,6 +169,7 @@ public class HeapFile implements DbFile {
     		BufferPool buffer;
     		HeapPageId pid; 		
     		HeapPage h = null;
+    		boolean open = false;
     		Iterator<Tuple> heapItr;	//heap iterator
     		int readPages = 0; 			//keeps track of the number of pages read
 			
@@ -179,33 +180,34 @@ public class HeapFile implements DbFile {
 			
 			@Override
     		public void open(){
-    			try {
-					h = (HeapPage)buffer.getPage(t,pid,null);
-					heapItr = h.iterator();
-					readPages = 1;
-				} catch (TransactionAbortedException e){
-					e.printStackTrace();
-				} catch (DbException e){
-					e.printStackTrace();					
-				}	
+				open = true;
     		}
     		@Override
     		public boolean hasNext(){     			
     			//return false if the iterator hasn't been opened
-    			if(h==null){
+    			if(open==false){
     				return false;
+    			}   			
+    			//set current page and its iterator if it hasn't been set up
+    			if(heapItr==null){
+    				try {
+						h = (HeapPage)buffer.getPage(t,pid,null);
+					} catch (TransactionAbortedException e) {
+						e.printStackTrace();
+					} catch (DbException e) {
+						e.printStackTrace();
+					}
+					heapItr = h.iterator();
+					readPages = 1;
     			}    			
-    			
     			//return true if there are tuples left in current page 
     			if(heapItr.hasNext()){
     				return true;
-    			}    		
-    			
+    			}   			
     			//return false if current page is the last page
     			if(readPages==numPages()){
     				return false;
-    			}
-    			
+    			}    			
     			//skip empty pages and see if there are any tuples
     			while(readPages<numPages()){
     				try {
@@ -240,21 +242,18 @@ public class HeapFile implements DbFile {
     		
     		@Override
     		public void rewind(){
+    			h = null;
+    			heapItr = null;
+    			readPages = 0;
 				pid = new HeapPageId(tableId,0);
-    			try {
-					h = (HeapPage)buffer.getPage(t,pid,null);
-					heapItr = h.iterator();
-					readPages=1;					
-    			} catch (TransactionAbortedException e){
-					e.printStackTrace();
-				} catch (DbException e){
-					e.printStackTrace();					
-				}			
     		}
+    		
     		@Override
     		public void close(){
     			h = null;
     			heapItr = null;
+    			open = false;
+    			readPages = 0;
     		}
     	}     
     	DbFileIterator result = new tempIterator();
