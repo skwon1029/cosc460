@@ -9,21 +9,53 @@ where a.id=c.pid and c.mid=m.mid and m.did=d.id
 and a.fname='Ginger' and a.lname='Rogers';
 
 Query 1 optimizer's plan:
+                                                 π(d.fname,d.lname),card:1
+                                                 |
+                                                 ⨝(m.did=d.id),card:1
+                              ___________________|____________________
+                              |                                      |
+                              ⨝(c.mid=m.mid),card:1                  |
+                ______________|_______________                       |
+                |                            |                       |
+                ⨝(a.id=c.pid),card:1         |                       |
+  ______________|______________              |                       |
+  |                           |              |                       |
+  σ(a.lname=Rogers),card:1    |              |                       |
+  |                           |              |                       |
+  σ(a.fname=Ginger),card:1    |              |                       |
+  |                           |            scan(Movie_Director m)    |
+scan(Actor a)               scan(Casts c)                          scan(Director d)
 
-<fill in here>
 
 Query 1 plan explanation:
 
-<fill in here>
+	The filters are pushed down so that we have fewer tuples coming from table Actor a.
+	By looking at which movies Ginger Rogers starred in, we looking at much fewer movies.
+	The join between Actor and Casts is probably very small and is therefore done first.
 
 Query 2:
 
-<fill in here>
+select a.id, a.fname, a.lname                   
+from Actor a, Movie m, Casts c                  
+where a.id=c.pid and m.id=c.mid and a.gender='M'
+and m.year=2000;
 
-Query 1 optimizer's plan:
+Query 2 optimizer's plan:
 
-<fill in here>
+                           π(a.id,a.fname,a.lname),card:1
+                           |
+                           ⨝(c.mid=m.id),card:1
+              _____________|______________
+              |                          |
+              ⨝(a.id=c.pid),card:1       σ(m.year=2000),card:53
+  ____________|____________              |
+  |                       |              |
+  σ(a.gender=M),card:1    |              |
+  |                       |            scan(Movie m)
+scan(Actor a)           scan(Casts c)
 
-Query 1 plan explanation:
+Query 2 plan explanation:
 
-<fill in here>
+	Filters are pushed down. 
+	Join for Actor and Casts is done first and becomes the outer relation because the tables are small.
+	Table Movie is joined last as an inner relation because it is probably larger than other tables.
