@@ -72,9 +72,9 @@ public class TableStats {
     private Vector<Object> histVec = new Vector<Object>();
     
     /*
-     * Array of histograms with buckets for all distinct values
+     * Array of HashMaps to keep track of distinct values
      */
-    private Vector<Object> distVec = new Vector<Object>();
+    private Vector<HashSet<Object>> distVec = new Vector<HashSet<Object>>();
     
     private DbFile f = null;
     private int ioCostPerPage = 0;
@@ -156,15 +156,15 @@ public class TableStats {
     		if(t.equals(Type.INT_TYPE)){
     			int min = ((IntField)minArr.get(i)).getValue();
     			int max = ((IntField)maxArr.get(i)).getValue();
-    			IntHistogram his = new IntHistogram(NUM_HIST_BINS,min,max);
-    			IntHistogram distHis = new IntHistogram(max-min+1,min,max);
+    			IntHistogram his = new IntHistogram(NUM_HIST_BINS,min,max);  
     			histVec.add(his);
-    			distVec.add(distHis);
     		}else{
     			StringHistogram his = new StringHistogram(NUM_HIST_BINS);
+    					
     			histVec.add(his);
-    			distVec.add(his);
     		}
+    		HashSet<Object> distMap = new HashSet<Object>();   
+    		distVec.add(distMap);
     	}
     	
     	//add values to the histograms
@@ -181,12 +181,14 @@ public class TableStats {
 				for(int i=0; i<numFields; i++){
 					Field v = t.getField(i);
 					if(v.getType().equals(Type.INT_TYPE)){
-						((IntHistogram)histVec.get(i)).addValue(((IntField)v).getValue());
-						((IntHistogram)distVec.get(i)).addValue(((IntField)v).getValue());
+						int val = ((IntField)v).getValue();
+						((IntHistogram)histVec.get(i)).addValue(val);						
+						(distVec.get(i)).add(val);
 					}else{
-						((StringHistogram)histVec.get(i)).addValue(((StringField)v).getValue());
-						((StringHistogram)distVec.get(i)).addValue(((StringField)v).getValue());
-					}
+						String val = ((StringField)v).getValue();
+						((StringHistogram)histVec.get(i)).addValue(val);
+						(distVec.get(i)).add(val);
+					}					
 				}    		
 			}
     	} catch (NoSuchElementException e) {
@@ -244,24 +246,7 @@ public class TableStats {
      * @return The number of distinct values of the field.
      */
     public int numDistinctValues(int field) {
-    	int result = 0;
-    	//count all the non-empty buckets of histograms in distVec
-        if(f.getTupleDesc().getFieldType(field).equals(Type.INT_TYPE)){
-        	int arr[] = ((IntHistogram)distVec.get(field)).getBuckets();
-        	for(int i=0; i<arr.length; i++){        		
-        		if(arr[i]>0){
-        			result += 1;
-        		}
-        	}
-        }else{
-        	int arr[] = ((StringHistogram)distVec.get(field)).hist.getBuckets();
-        	for(int i=0; i<arr.length; i++){
-        		if(arr[i]>0){
-        			result += 1;
-        		}
-        	}
-        }
-        return result;
+		return distVec.elementAt(field).size();
     }
 
     /**
