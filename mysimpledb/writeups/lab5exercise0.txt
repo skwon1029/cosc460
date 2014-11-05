@@ -1,18 +1,36 @@
-Your name(s): 
+Your name(s): Soo Bin KAwon 
 
 1. Explain how you modified SynchronizedThreads in exercise 1.
+	
+	I added the keyword "synchronized" to the increment(String name) function of the Counter class.
 
 2. Briefly describe (1-2 sentences) an alternate implementation for exercise 1.
+
+	I could use synchronized statements inside the run() function. Inside the for loop, I could put:
+		synchronized(counter){ counter.increment(name); }
 
 3. Exercise 2: Explain the deadlock that happens in Deadlock in terms of locks and threads waiting on locks. The two threads in this case are alphonse and gaston. 
 
 a) What objects are being locked? 
 
-b) Who has what locks? 
+	Friend
+
+b) Who has what locks?
+
+	A Thread object has a lock on a Friend object.
 
 c) How does deadlock occur?
 
+	When bower.bowBack(this) is called inside bow(), it is waiting for the "bower" Object to be unlocked.
+	Friend objects Alphonse and Gaston both end up waiting for each other to be unlocked.
+
 4. Return to exercise 1, can deadlock occur here?  Explain why or why not.
 
+	I don't think deadlock could occur in exercise 1 because the methods of Incrementers don't depend on other Incrementers.
+	It simply increments the shared counter and releases the lock. 
+
 5. Explain why acquireLock uses a synchronized statement inside the body of the method. In other words, why not just make the acquireLock method synchronized, just like releaseLock? Will this work? Why or why not?
-	
+
+	It uses Thread.sleep(1) to avoid wasting too much CPU time while waiting for the lock to be available.
+	Thread.sleep(1) does not need to be synchronized, and the only part that needs to be synchronized is the part where we check if the lock is available and take the lock if available.
+	Therefore we don't need to make the whole method synchronized.
