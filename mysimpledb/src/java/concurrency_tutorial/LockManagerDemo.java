@@ -75,27 +75,23 @@ public class LockManagerDemo {
     static class LockManager {
         private boolean inUse = false;
 
-        public void acquireLock() {
+        public synchronized void acquireLock() {
             boolean waiting = true;
-            while (waiting) {
-                synchronized (this) {
-                    // check if lock is available
-                    if (!inUse) {
-                        // it's not in use, so we can take it!
-                        inUse = true;
-                        waiting = false;
-                    }
-                }
-                if (waiting) {
-                    try {
-                        Thread.sleep(1);
-                    } catch (InterruptedException ignored) { }
-                }
+            while(waiting){          		
+            	if(!inUse){            		
+            		inUse = true;
+            		waiting = false;
+            	}else{
+            		try {
+						wait();
+					} catch (InterruptedException e) {}
+            	}				
             }
         }
 
         public synchronized void releaseLock() {
             inUse = false;
+            notifyAll(); //once done, notify threads that are waiting
         }
     }
 }
