@@ -44,7 +44,8 @@ public class HeapPageId implements PageId {
     public int hashCode() {
     	//concatenate table number and page number
     	String result = Integer.toString(tableId) + Integer.toString(pgNo);
-    	return Integer.parseInt(result);    	
+    	Long l = Long.parseLong(result);	//ensure the hash code does not exceed the maximum int value
+    	return l.hashCode(); 
     }
 
     /**

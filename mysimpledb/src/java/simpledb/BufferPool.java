@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.LinkedList;
+import java.util.Hashtable;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -34,13 +36,17 @@ public class BufferPool {
      */
     public static final int DEFAULT_PAGES = 50;
     
-    private PageId[] pidAr; //array of PageIds
-    private Page[] pageAr; 	//array of Pages
-    private int numPages;	//actual number of pages in buffer 
-    						//(not the same as pidAr.length)
-    
-    private int[] accessAr;	//see evictPage() for description
+    private HashMap<PageId,Page> pages;
+    private int numPages;	//maximum number of pages
+    private HashMap<PageId,Integer> accessAr;
     private int accessNum;	//see evictPage() for description
+    
+    /*
+     * ArrayList consists of: TrasactionId, boolean(granted/waiting), Permissions(mode)
+     * If pid not in lockTable, there is not lock on the page 
+     */
+    private ConcurrentHashMap<PageId,Boolean> inUse;
+    private ConcurrentHashMap<PageId,LinkedList<ArrayList<Object>>> lockTable;
     
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -48,12 +54,12 @@ public class BufferPool {
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        pidAr = new PageId[numPages];	//all set to null
-        pageAr = new Page[numPages];	//all set to null
-        accessAr = new int[numPages];	//all set to zero
+        pages = new HashMap<PageId,Page>();
+        accessAr = new HashMap<PageId, Integer>();
         accessNum = 1;
-        this.numPages = 0;
-        
+        this.numPages = numPages;
+        inUse = new ConcurrentHashMap<PageId,Boolean>();
+        lockTable = new ConcurrentHashMap<PageId,LinkedList<ArrayList<Object>>>();
     }
 
     public static int getPageSize() {
@@ -80,40 +86,58 @@ public class BufferPool {
      * @param pid  the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
-            throws TransactionAbortedException, DbException {    	
-        for(int i=0; i<pidAr.length;i++){
-        	if(pidAr[i]!=null){
-        		if(pidAr[i].equals(pid)){
-        			accessAr[i] = accessNum++; //page was accessed
-        			return pageAr[i];
-        		}
-       		}
-        }
-        
-        //if the page cannot be found in the buffer pool, find it from the DbFile
-        int t = pid.getTableId();
-        DbFile f = Database.getCatalog().getDatabaseFile(t);
-        Page newPage = f.readPage(pid);
-        
-        //if there is no space in the buffer pool, evict page
-        if(numPages==pidAr.length){
-        	evictPage();
-        }
-        
-        //put the page in buffer pool and return the page
-        if(numPages<pidAr.length){
-        	for(int i=0; i<pidAr.length; i++){
-        		if(pidAr[i]==null){
-        			pidAr[i]=pid;
-        			pageAr[i]=newPage;
-        			accessAr[i]=0;
-        			numPages++;
-        			return newPage;
-        		}
-        	}
-        }
-        throw new DbException("page could not be found");
+    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
+            throws TransactionAbortedException, DbException {    
+    	
+    	//information to be added to the lock table
+    	ArrayList<Object> al = new ArrayList<Object>(3);
+		al.add(tid);	//transaction id
+		al.add(true);	//granted
+		al.add(perm);	//shared/exclusive 
+    	
+		Page pageToReturn;
+		
+		//page found in the buffer
+		if(pages.containsKey(pid)){
+			accessAr.remove(pid);
+			accessAr.put(pid, accessNum++);
+			pageToReturn = pages.get(pid);
+		//page not in the buffer
+		}else{      
+			int t = pid.getTableId();
+		    DbFile f = Database.getCatalog().getDatabaseFile(t);
+		    pageToReturn = f.readPage(pid);
+		    
+		    //if there is no space in the buffer pool, evict page
+		    if(numPages==pages.size()){
+		     	evictPage();
+		    }
+		    pages.put(pid, pageToReturn);
+	        accessAr.put(pid, accessNum++);
+		}
+		
+		//if the page already has a linked list
+		if(lockTable.contains(pid)){
+			boolean waiting = true;
+			while(waiting){          		
+            	if(!inUse.get(pid)){ 
+            		inUse.replace(pid, true);
+            		waiting = false;
+            	}else{
+            		try{
+						wait();
+					}catch(InterruptedException e) {}
+            	}				
+            }	
+		//if the page needs a new linked list
+		}else{
+			LinkedList<ArrayList<Object>> ll = new LinkedList<ArrayList<Object>>();
+			ll.add(al);
+			lockTable.put(pid,ll);
+			inUse.put(pid, true);    		
+		}				
+		return pageToReturn;
+		
     }
 
     /**
@@ -125,9 +149,18 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public void releasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2|lab3|lab4                                                         // cosc460
+    public synchronized void releasePage(TransactionId tid, PageId pid) {    
+    	LinkedList<ArrayList<Object>> ll = lockTable.get(pid);
+    	Iterator<ArrayList<Object>> it = ll.iterator();
+    	while(it.hasNext()){
+    		ArrayList<Object> a = it.next();
+    		if(a.get(0).equals(tid)){
+    			ll.removeFirstOccurrence(a);
+    			inUse.replace(pid,false);
+    	    	break;   			
+    		}
+    	}
+    	notifyAll();   	
     }
 
     /**
@@ -144,8 +177,17 @@ public class BufferPool {
      * Return true if the specified transaction has a lock on the specified page
      */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        // some code goes here
-        // not necessary for lab1|lab2|lab3|lab4                                                         // cosc460
+    	if(inUse.get(p) && lockTable.containsKey(p)){
+        	LinkedList<ArrayList<Object>> ll = lockTable.get(p);
+        	Iterator<ArrayList<Object>> it = ll.iterator();
+        	while(it.hasNext()){
+        		ArrayList<Object> al = it.next();
+        		TransactionId t = (TransactionId) al.get(0);
+        		if(t.equals(tid)){
+        			return true;
+        		}
+        	}        	
+        }
         return false;
     }
 
@@ -221,11 +263,14 @@ public class BufferPool {
      * break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        for(int i=0;i<pidAr.length;i++){
-        	if(pidAr[i]!=null){
-	        	flushPage(pidAr[i]);
-        	}
-        }
+    	Set<PageId> ps = pages.keySet();
+    	Iterator<PageId> it = ps.iterator();
+    	while(it.hasNext()){
+    		PageId pi = it.next();
+    		if(pages.containsKey(pi)){
+    			flushPage(pi);
+    		}
+    	}
     }
 
     /**
@@ -245,22 +290,18 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
-    	for(int i=0; i<pidAr.length; i++){
-    		if(pidAr[i]!=null){
-    			if(pidAr[i].equals(pid)){	    		
-		    		Page p = pageAr[i];
-		    		//find dirty page
-		    		if(p.isDirty()!=null){
-		    			try{
-		    				DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());	    					
-			   				f.writePage(p); //write page to disk
-			   				return;
-		    			}catch(IOException e){
-		    				throw new IOException("cannot find page");
-		    			}
-		    		}
-		    	}
-    		}
+    	if(pages.containsKey(pid)){
+    		Page p = pages.get(pid);
+		    //find dirty page
+		    if(p.isDirty()!=null){
+		    	try{
+		    		DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());		    		
+					f.writePage(p); //write page to disk
+					return;
+		    	}catch(IOException e){
+		    		throw new IOException("cannot find page");
+		    	}		    
+		    }    		
     	}
     }
 
@@ -293,22 +334,25 @@ public class BufferPool {
     	 */
     	
     	//choose page
-    	int min = accessAr[0];	//smallest value
-    	int index = 0;			//index of the page with the smallest value
-    	for(int i=1;i<pidAr.length;i++){
-    		if(min>accessAr[i]){
-    			min = accessAr[i];
-    			index = i;    					
-    		}    	
+    	Set<PageId> pa = pages.keySet();    	
+    	PageId pp = (PageId)pa.toArray()[0];	//arbitrary pid 
+    	int min = accessAr.get(pp);				//arbitrary number 
+    	
+    	Iterator<PageId> it = pa.iterator();
+    	while(it.hasNext()){
+    		PageId i = it.next();
+    		int n = accessAr.get(i);
+    		if(min>n){
+    			min = n;
+    			pp = i;
+    		}
     	}
     	
     	//evict the chosen page
     	try{
-	    	flushPage(pidAr[index]);
-	    	pidAr[index]=null;
-	    	pageAr[index]=null;
-	    	accessAr[index]=0;
-	    	numPages--;
+	    	flushPage(pp);
+	    	pages.remove(pp);
+	    	accessAr.remove(pp);
     	}catch(IOException e){
     		throw new DbException("cannot evit page");
     	}
