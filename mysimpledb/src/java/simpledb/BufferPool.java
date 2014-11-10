@@ -45,9 +45,8 @@ public class BufferPool {
      * ArrayList consists of: TrasactionId, boolean(granted/waiting), Permissions(mode)
      * If pid not in lockTable, there is not lock on the page 
      */
-    private ConcurrentHashMap<PageId,Boolean> inUse;
-    private ConcurrentHashMap<PageId,LinkedList<ArrayList<Object>>> lockTable;
-    
+    private ConcurrentHashMap<PageId,LockManager> lockManagers;
+        
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -57,9 +56,8 @@ public class BufferPool {
         pages = new HashMap<PageId,Page>();
         accessAr = new HashMap<PageId, Integer>();
         accessNum = 1;
-        this.numPages = numPages;
-        inUse = new ConcurrentHashMap<PageId,Boolean>();
-        lockTable = new ConcurrentHashMap<PageId,LinkedList<ArrayList<Object>>>();
+        this.numPages = numPages;    
+        lockManagers = new ConcurrentHashMap<PageId,LockManager>();
     }
 
     public static int getPageSize() {
@@ -86,22 +84,19 @@ public class BufferPool {
      * @param pid  the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
-            throws TransactionAbortedException, DbException {    
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
+            throws TransactionAbortedException, DbException {        	
     	
-    	//information to be added to the lock table
-    	ArrayList<Object> al = new ArrayList<Object>(3);
-		al.add(tid);	//transaction id
-		al.add(true);	//granted
-		al.add(perm);	//shared/exclusive 
-    	
-		Page pageToReturn;
+		Page pageToReturn;			
 		
 		//page found in the buffer
 		if(pages.containsKey(pid)){
 			accessAr.remove(pid);
 			accessAr.put(pid, accessNum++);
 			pageToReturn = pages.get(pid);
+			//lock manager must already exist
+			lockManagers.get(pid).acquireLock(tid, perm);	
+			
 		//page not in the buffer
 		}else{      
 			int t = pid.getTableId();
@@ -114,30 +109,14 @@ public class BufferPool {
 		    }
 		    pages.put(pid, pageToReturn);
 	        accessAr.put(pid, accessNum++);
-		}
+	        
+	        //create lock manager for the page
+	        LockManager newLockManager = new LockManager();
+	        newLockManager.acquireLock(tid, perm);
+	        lockManagers.put(pid, newLockManager);
+		}	
 		
-		//if the page already has a linked list
-		if(lockTable.contains(pid)){
-			boolean waiting = true;
-			while(waiting){          		
-            	if(!inUse.get(pid)){ 
-            		inUse.replace(pid, true);
-            		waiting = false;
-            	}else{
-            		try{
-						wait();
-					}catch(InterruptedException e) {}
-            	}				
-            }	
-		//if the page needs a new linked list
-		}else{
-			LinkedList<ArrayList<Object>> ll = new LinkedList<ArrayList<Object>>();
-			ll.add(al);
-			lockTable.put(pid,ll);
-			inUse.put(pid, true);    		
-		}				
-		return pageToReturn;
-		
+		return pageToReturn;		
     }
 
     /**
@@ -149,18 +128,8 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public synchronized void releasePage(TransactionId tid, PageId pid) {    
-    	LinkedList<ArrayList<Object>> ll = lockTable.get(pid);
-    	Iterator<ArrayList<Object>> it = ll.iterator();
-    	while(it.hasNext()){
-    		ArrayList<Object> a = it.next();
-    		if(a.get(0).equals(tid)){
-    			ll.removeFirstOccurrence(a);
-    			inUse.replace(pid,false);
-    	    	break;   			
-    		}
-    	}
-    	notifyAll();   	
+    public void releasePage(TransactionId tid, PageId pid) { 
+    	lockManagers.get(pid).releaseLock();
     }
 
     /**
@@ -177,18 +146,7 @@ public class BufferPool {
      * Return true if the specified transaction has a lock on the specified page
      */
     public boolean holdsLock(TransactionId tid, PageId p) {
-    	if(inUse.get(p) && lockTable.containsKey(p)){
-        	LinkedList<ArrayList<Object>> ll = lockTable.get(p);
-        	Iterator<ArrayList<Object>> it = ll.iterator();
-        	while(it.hasNext()){
-        		ArrayList<Object> al = it.next();
-        		TransactionId t = (TransactionId) al.get(0);
-        		if(t.equals(tid)){
-        			return true;
-        		}
-        	}        	
-        }
-        return false;
+    	return lockManagers.get(p).inUse;
     }
 
     /**
@@ -357,5 +315,27 @@ public class BufferPool {
     		throw new DbException("cannot evit page");
     	}
     }
+    
+    static class LockManager {
+    	private boolean inUse = false;
+    	
+        public synchronized void acquireLock(TransactionId tid, Permissions perm){    		
+    		boolean waiting = true;
+    		while(waiting){          		
+              	if(!inUse){ 
+               		inUse = true;
+               		waiting = false;
+               	}else{
+               		try{
+    					wait();
+    				}catch(InterruptedException e) {}
+               	}	            
+    		}			
+        }
 
+        public synchronized void releaseLock() {
+            inUse = false;
+            notifyAll(); //once done, notify threads that are waiting
+        }
+    }
 }
