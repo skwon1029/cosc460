@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.LinkedList;
 import java.util.Hashtable;
@@ -277,7 +278,7 @@ public class BufferPool {
      */
     private synchronized void evictPage() throws DbException {
     	/* 
-    	 * LRU page eviction policy
+    	 * LRU PAGE EVICTION POLICY: 
     	 * 
     	 * Array accessAr keeps track of the order of page access. Every time
     	 * a page is accessed through getPage, insertTuple, or deleteTuple,
@@ -289,21 +290,33 @@ public class BufferPool {
     	 * 
     	 * Code below gets the page with the smallest value in accessAr
     	 * and evicts the page. 
+    	 * 
+    	 * 
+    	 * NO STEAL POLICY:
+    	 * 
+    	 * It does not evict any dirty page, and throws a DbException
+    	 * if all the pages are dirty.
     	 */
     	
     	//choose page
     	Set<PageId> pa = pages.keySet();    	
-    	PageId pp = (PageId)pa.toArray()[0];	//arbitrary pid 
-    	int min = accessAr.get(pp);				//arbitrary number 
+    	PageId pp = null;	
+    	int min = 999999999;
     	
     	Iterator<PageId> it = pa.iterator();
     	while(it.hasNext()){
     		PageId i = it.next();
     		int n = accessAr.get(i);
-    		if(min>n){
+    		//page is NOT dirty and has the lowest value in accessAr
+    		if(pages.get(i).isDirty()!=null && min>n){
     			min = n;
     			pp = i;
     		}
+    	}
+    	
+    	//throw DbException if all pages are dirty
+    	if(pp==null){
+    		throw new DbException("all pages in the buffer are dirty");
     	}
     	
     	//evict the chosen page
@@ -318,23 +331,45 @@ public class BufferPool {
     
     static class LockManager {
     	private boolean inUse = false;
+    	private Permissions perm = null;
+    	//transaction that currently have lock on the page
+    	private Vector<TransactionId> tidVec = new Vector<TransactionId>();
     	
-        public synchronized void acquireLock(TransactionId tid, Permissions perm){    		
-    		boolean waiting = true;
-    		while(waiting){          		
+        public synchronized void acquireLock(TransactionId tid, Permissions perm){
+        	boolean waiting = true;
+    		while(waiting){ 
+    			//not in use
               	if(!inUse){ 
                		inUse = true;
                		waiting = false;
-               	}else{
-               		try{
-    					wait();
-    				}catch(InterruptedException e) {}
+               		this.perm = perm;
+               		tidVec.add(tid);
+               	}else{  
+               		//read only accesses
+               		if(this.perm.equals(Permissions.READ_ONLY) && perm.equals(Permissions.READ_ONLY)){
+               			waiting = false;
+               			tidVec.add(tid);
+               		//check if upgrade
+               		}else if(perm.equals(Permissions.READ_WRITE) && tidVec.contains(tid) && this.perm.equals(Permissions.READ_ONLY)){
+               			waiting = false;
+    	        		this.perm = perm;
+    	        	//same transaction
+    	        	}else if(tidVec.contains(tid)){
+    	        		waiting = false;
+    	        	//must wait
+    	        	}else{	               		
+	               		try{
+	    					wait();
+	    				}catch(InterruptedException e) {}
+               		}
                	}	            
     		}			
         }
 
         public synchronized void releaseLock() {
             inUse = false;
+            this.perm = null;
+            tidVec.clear();            
             notifyAll(); //once done, notify threads that are waiting
         }
     }
