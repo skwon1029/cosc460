@@ -117,7 +117,7 @@ public class HeapFile implements DbFile {
     	//go through pages and find empty slot
         for(int i=0;i<numPages();i++){
         	pid = new HeapPageId(tableId,i);
-        	p = (HeapPage)buffer.getPage(tid, pid, null);
+        	p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
         	
         	//if the page has space, insert tuple
         	if(p.getNumEmptySlots()!=0){        		
@@ -156,7 +156,7 @@ public class HeapFile implements DbFile {
         PageId pid = rid.getPageId();
         BufferPool buffer = Database.getBufferPool();
         HeapPage p = null;
-        p = (HeapPage)buffer.getPage(tid, pid, null);
+        p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
         p.deleteTuple(t);
         result.add(p);
         return result;
@@ -192,7 +192,7 @@ public class HeapFile implements DbFile {
     			//set current page and its iterator if it hasn't been set up
     			if(heapItr==null){
     				try {
-						h = (HeapPage)buffer.getPage(t,pid,null);
+						h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
 					} catch (TransactionAbortedException e) {
 						e.printStackTrace();
 					} catch (DbException e) {
@@ -213,7 +213,7 @@ public class HeapFile implements DbFile {
     			while(readPages<numPages()){
     				try {
     					pid = new HeapPageId(tableId,pid.pageNumber()+1);
-    					h = (HeapPage)buffer.getPage(t,pid,null);
+    					h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
     					readPages++;
     					heapItr = h.iterator();    					
     					if(heapItr.hasNext()){
