@@ -85,16 +85,18 @@ public class HeapFile implements DbFile {
     }
 
     public void writePage(Page page) throws IOException {
-        int offset = BufferPool.getPageSize() * page.getId().pageNumber();
+        int offset =  page.getId().pageNumber() * BufferPool.getPageSize();
         byte[] data = page.getPageData();
-        if(data.length<=BufferPool.getPageSize())
-        try{
-	        RandomAccessFile file = new RandomAccessFile(f,"rw");
-	        file.write(data); //file.write(data,offset,data.length);
-		    file.close();
-        }catch(IOException e){
-        	throw new IOException("cannot write page");
-        }         
+        if(data.length<=BufferPool.getPageSize()){
+	        try{
+		        RandomAccessFile file = new RandomAccessFile(f,"rw");
+		        file.seek((long)offset);
+		        file.write(data);
+		        file.close();
+	        }catch(IOException e){
+	        	throw new IOException("cannot write page");
+	        }
+        }
     }
 
     /**
