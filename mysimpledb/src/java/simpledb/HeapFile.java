@@ -119,35 +119,39 @@ public class HeapFile implements DbFile {
     	//go through pages and find empty slot
         for(int i=0;i<numPages();i++){
         	pid = new HeapPageId(tableId,i);
-        	p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
+        	p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_ONLY);
         	
         	//if the page has space, insert tuple
-        	if(p.getNumEmptySlots()!=0){        		
-        		p.insertTuple(t);
-        		result.add(p);
-        		return result;
+        	if(p.getNumEmptySlots()!=0){
+	        	p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
+	        	p.insertTuple(t);
+	        	result.add(p);  
+	        	return result;        		
         	}
+        	buffer.releasePage(tid, pid);
         }
-        //if there aren't any pages with space
-        //create a new page in the file
-        byte[] newPageData = HeapPage.createEmptyPageData();
-        HeapPageId newPid = new HeapPageId(tableId,numPages());
-        HeapPage newPage = new HeapPage(newPid,newPageData);
-        
-        //insert tuple to the new page
-        newPage.insertTuple(t);        
-        newPageData = newPage.getPageData();
-        
-        //add the new page to file      
-        try{ 
-        	OutputStream output = new BufferedOutputStream(new FileOutputStream(f,true));
-	        output.write(newPageData);
-	        output.close();
-	        result.add(newPage);
-	        return result;
-        } catch(IOException e){
-        	throw new IOException("cannot add new page");
-        }      
+        synchronized(this){
+		    //if there aren't any pages with space
+		    //create a new page in the file
+		    byte[] newPageData = HeapPage.createEmptyPageData();
+		    HeapPageId newPid = new HeapPageId(tableId,numPages());
+		    HeapPage newPage = new HeapPage(newPid,newPageData);
+		     
+		    //insert tuple to the new page
+		    newPage.insertTuple(t);        
+		    newPageData = newPage.getPageData();
+		    //add the new page to file      
+		    try{ 
+		    	OutputStream output = new BufferedOutputStream(new FileOutputStream(f,true));
+			    output.write(newPageData);
+			    output.flush();
+			    output.close();
+			    result.add(newPage);
+			    return result;
+		    } catch(IOException e){
+		     	throw new IOException("cannot add new page");
+		    }  
+        }
     }
 
     // see DbFile.java for javadocs
@@ -157,10 +161,9 @@ public class HeapFile implements DbFile {
         RecordId rid = t.getRecordId();
         PageId pid = rid.getPageId();
         BufferPool buffer = Database.getBufferPool();
-        HeapPage p = null;
-        p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
+        HeapPage p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
         p.deleteTuple(t);
-        result.add(p);
+        result.add(p);        
         return result;
     }
 
@@ -182,56 +185,50 @@ public class HeapFile implements DbFile {
 			}
 			
 			@Override
-    		public void open(){
+    		public void open() throws DbException, TransactionAbortedException{
 				open = true;
     		}
     		@Override
-    		public boolean hasNext(){     			
+    		public boolean hasNext() throws DbException, TransactionAbortedException{     			
     			//return false if the iterator hasn't been opened
     			if(open==false){
     				return false;
     			}   			
     			//set current page and its iterator if it hasn't been set up
     			if(heapItr==null){
-    				try {
-						h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
-					} catch (TransactionAbortedException e) {
-						e.printStackTrace();
-					} catch (DbException e) {
-						e.printStackTrace();
-					}
+					h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
 					heapItr = h.iterator();
 					readPages = 1;
+					
     			}    			
     			//return true if there are tuples left in current page 
     			if(heapItr.hasNext()){
+    				h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_WRITE);
     				return true;
     			}   			
     			//return false if current page is the last page
     			if(readPages==numPages()){
+    				buffer.releasePage(t, pid);
     				return false;
     			}    			
     			//skip empty pages and see if there are any tuples
     			while(readPages<numPages()){
-    				try {
-    					pid = new HeapPageId(tableId,pid.pageNumber()+1);
-    					h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
-    					readPages++;
-    					heapItr = h.iterator();    					
-    					if(heapItr.hasNext()){
-    						return true;
-    					}
-    				} catch (TransactionAbortedException e){
-    					e.printStackTrace();
-    				} catch (DbException e){
-    					e.printStackTrace();					
-    				}
+    				buffer.releasePage(t, pid);
+    				pid = new HeapPageId(tableId,pid.pageNumber()+1);
+    				h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
+    				readPages++;
+    				heapItr = h.iterator();    					
+    				if(heapItr.hasNext()){
+    					h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_WRITE);
+    					heapItr = h.iterator();
+    					return true;
+    				}    	    				
     			}
     			return false;    			
     		}
     		
     		@Override
-    		public Tuple next(){
+    		public synchronized Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException{
     			if(!hasNext()){
     				throw new NoSuchElementException();
     			}
@@ -244,10 +241,11 @@ public class HeapFile implements DbFile {
     		}
     		
     		@Override
-    		public void rewind(){
+    		public void rewind() throws DbException, TransactionAbortedException{
     			h = null;
     			heapItr = null;
     			readPages = 0;
+    			buffer.releasePage(t, pid);
 				pid = new HeapPageId(tableId,0);
     		}
     		
@@ -257,6 +255,7 @@ public class HeapFile implements DbFile {
     			heapItr = null;
     			open = false;
     			readPages = 0;
+    			buffer.releasePage(t, pid);
     		}
     	}     
     	DbFileIterator result = new tempIterator();

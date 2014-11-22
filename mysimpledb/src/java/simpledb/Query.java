@@ -53,7 +53,6 @@ public class Query implements Serializable {
     public void start() throws IOException, DbException,
             TransactionAbortedException {
         op.open();
-
         started = true;
     }
 
@@ -79,9 +78,9 @@ public class Query implements Serializable {
      */
     public Tuple next() throws DbException, NoSuchElementException,
             TransactionAbortedException {
-        if (!started)
-            throw new DbException("Database not started.");
-
+        if(!started){
+            throw new NoSuchElementException("Database not started.");
+        }
         return op.next();
     }
 
@@ -89,8 +88,8 @@ public class Query implements Serializable {
      * Close the iterator
      */
     public void close() throws IOException {
-        op.close();
-        started = false;
+    	started = false;
+    	op.close();
     }
 
     public void execute() throws IOException, DbException, TransactionAbortedException {

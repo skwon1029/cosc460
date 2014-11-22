@@ -92,7 +92,7 @@ public class SeqScan implements DbIterator {
         return it.hasNext();
     }
 
-    public Tuple next() throws NoSuchElementException,
+    public synchronized Tuple next() throws NoSuchElementException,
             TransactionAbortedException, DbException {
         return it.next();
     }

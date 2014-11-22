@@ -5,38 +5,50 @@ After you complete lab 5, please answer the following questions.
 
 1. What is your name?  If you work with a partner, be sure to write both of your names.
 
-	(Replace this text with your answer)
+	Soo Bin Kwon
 
 2. What did you think of this assignment?
 
-	(Replace this text with your answer)
+	I wish there was more time to work on exercise 5.
 
 3. What was the hardest part of this assignment?
 
-	(Replace this text with your answer)
+	Concurrency, debugging
 
 4. Describe any missing or incomplete elements of your code.
 
-	(Replace this text with your answer)
+	testTwoThreads, testFiveThreads, and testTenThreads sometimes pass, sometimes fail.	
+	I think the problem is coming from inserting/deleting tuples.
+	Most of the the errors say the tuple that I'm trying to delete does not exist.
 
 5. Roughly how long did you spend working on this lab?
 
-	(Replace this text with your answer)
+	I can't remember how long I spent on the milestones.
+	For exercise 4 and 5, I'd say about 10 hours.
 
 6. Describe your lock manager implementation.  Here are some specific questions to answer:
 
 a) Where is your lock manager located?  (I.e., is it a separate class, part of BufferPool, etc.)
 
-	(Replace this text with your answer)
+	My lock manager is a separate class and it is created when a page is brought into the buffer pool in getPage().
 
 b) What specific information do you store and how do you store it?  
 
-	(Replace this text with your answer)
+	I store 	a boolean to know whether the page is in use, 
+				a Permissions object to store what type of permission the current lock has,
+				and a vector that keeps track of all the currently running threads.
+	These are stored inside the lock manager class.
 
 c) Briefly describe what happens when a new transaction requests a page.  I.e., walk thru how the lock manager decides whether or not to grant the request.  Your description should reference the data structures that describe in part (b).
 
-	(Replace this text with your answer)
+	The page tries to acquire the lock. 
+	If there is no thread currently hold a lock on the page (if boolean inUse is false), the request is granted.
+	If not, we wait for the currently running thread to release the lock.
+	If the thread currently holding the lock releases the lock, the waiting thread will be woken up and able to acquire the lock.
 
 d) Briefly explain how you manage locks when inserting a tuple into a HeapFile.  In particular, how do you acquire/release locks when looking for a page to insert.
 
-	(Replace this text with your answer)
+	I go through each page using READ_ONLY permission and look for a page with space.
+	I release the lock if the page does not have any space.
+	If I do find a page with space, I upgrade the lock to READ_WRITE and insert the tuple.
+	If I cannot find any space with space, I create a new page.

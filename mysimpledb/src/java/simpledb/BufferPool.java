@@ -93,21 +93,23 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {        	
     	
-		Page pageToReturn;			
+		Page pageToReturn = null;			
 		
 		//page found in the buffer
 		if(pages.containsKey(pid)){
 			accessAr.remove(pid);
 			accessAr.put(pid, accessNum++);
 			pageToReturn = pages.get(pid);
+			System.out.println("page was found in buffer: "+pageToReturn.getId());
 			//lock manager must already exist
-			lockManagers.get(pid).acquireLock(tid, perm);	
+			lockManagers.get(pid).acquireLock(tid, perm);
 			
 		//page not in the buffer
 		}else{      
 			int t = pid.getTableId();
 		    DbFile f = Database.getCatalog().getDatabaseFile(t);
 		    pageToReturn = f.readPage(pid);
+		    System.out.println("page was found in disk: "+pageToReturn.getId());
 		    
 		    //if there is no space in the buffer pool, evict page
 		    if(maxPages==pages.size()){
@@ -117,9 +119,9 @@ public class BufferPool {
 	        accessAr.put(pid, accessNum++);
 	        
 	        //create lock manager for the page
-	        LockManager newLockManager = new LockManager();
-	        newLockManager.acquireLock(tid, perm);
+	        LockManager newLockManager = new LockManager();	        
 	        lockManagers.put(pid, newLockManager);
+	        newLockManager.acquireLock(tid, perm);
 		}	
 		
 		//add information to tidMap
@@ -172,34 +174,25 @@ public class BufferPool {
      */
     public void transactionComplete(TransactionId tid, boolean commit)
             throws IOException {
-    	//set of pages associated with tid
+    	
     	Set<PageId> dirtyPages = tidMap.get(tid);
-    	System.out.println("size of dirtyPages Set: "+dirtyPages.size());
-    	Iterator<PageId> it = dirtyPages.iterator();    	
+    	if(dirtyPages==null || dirtyPages.isEmpty()){
+    		System.out.println("no dirtyPages");
+    		return;
+    	}
+    	Iterator<PageId> it = dirtyPages.iterator(); 
     	
     	if(commit){
-    		//flush dirty pages associated with tid
-    		while(it.hasNext()){
-    			PageId pid = it.next();
-    			System.out.println(pid); 
-    			if(pages.get(pid).isDirty()!=null){
-    				System.out.println("page is dirty");
-    				flushPage(pid);
-    			}
-    		} 
-    	}
-    	
-    	//if abort	
-    	else{
+    		flushPages(tid);
+    	}else{    	
     		//revert any changes made by tid
     		while(it.hasNext()){
     			//replace the page in bufferpool with the corresponding page from disk
     			PageId pid = it.next();
     		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
-    		    Page diskPage = f.readPage(pid);
-    		    pages.remove(pid);
-    		    pages.put(pid, diskPage);
-    		}   		
+    		    Page diskPage = f.readPage(pid);    		    
+    		    pages.put(pid, diskPage);    	   		    
+    		}  
     	}    	
     	tidMap.remove(tid);
     	
@@ -207,11 +200,14 @@ public class BufferPool {
     	it = dirtyPages.iterator();
     	while(it.hasNext()){
     		PageId pid = it.next();
+    		releasePage(tid,pid);
 	    	LockManager lm = lockManagers.get(pid);
 	    	//stop waiting lock requests from acquiring lock  
 	    	lm.complete = true;
 	    	//release current locks
-	    	lm.releaseLock();
+	    	lm.waitVec.remove(tid);
+	    	//lm.releaseLock();
+	    	
     	}
     }
 
@@ -233,10 +229,10 @@ public class BufferPool {
             throws DbException, IOException, TransactionAbortedException {
     	DbFile f = Database.getCatalog().getDatabaseFile(tableId);
     	ArrayList<Page> dirtyPages = f.insertTuple(tid, t); //pages that were dirtied
-    	Iterator<Page> dirtyItr = dirtyPages.iterator();		
-    	
-    	while (dirtyItr.hasNext()){
-    		HeapPage dirtyPage = (HeapPage)dirtyItr.next();
+    	Iterator<Page> dirtyItr = dirtyPages.iterator();	
+    	while (dirtyItr.hasNext()){    		
+    		Page dirtyPage = dirtyItr.next();
+    		//PageId pid = dirtyPage.getId();
     		dirtyPage.markDirty(true, tid);
     	}
     	dirtyItr.remove();
@@ -256,8 +252,12 @@ public class BufferPool {
      */
     public void deleteTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
+    	
+    	//System.out.println(t.getRecordId().getPageId().getTableId);
+    	//Database.getCatalog().
+    	//t.getRecordId().
     	int tableId = t.getRecordId().getPageId().getTableId();
-    	DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+    	HeapFile file = (HeapFile)Database.getCatalog().getDatabaseFile(tableId);
     	ArrayList<Page> dirtyPages = file.deleteTuple(tid, t); //pages that were dirtied
     	Iterator<Page> dirtyItr = dirtyPages.iterator();
     	
@@ -309,7 +309,6 @@ public class BufferPool {
 		    		HeapFile f = (HeapFile)Database.getCatalog().getDatabaseFile(pid.getTableId());		    		
 					f.writePage(p); 					//write page to disk					
 					p.markDirty(false, p.isDirty());	//mark the page clean?	
-	    			System.out.println("page is flushed");
 					return;
 		    	}catch(IOException e){
 		    		throw new IOException("cannot find page");
@@ -322,8 +321,23 @@ public class BufferPool {
      * Write all pages of the specified transaction to disk.
      */
     public synchronized void flushPages(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2|lab3|lab4                                                         // cosc460
+        //set of pages associated with tid
+    	Set<PageId> dirtyPages = tidMap.get(tid);
+    	if(dirtyPages==null || dirtyPages.isEmpty()){
+    		System.out.println("no dirtyPages");
+    		return;
+    	}
+    	//System.out.println("size of dirtyPages Set: "+dirtyPages.size());
+    	Iterator<PageId> it = dirtyPages.iterator();    	
+    	
+    	//flush dirty pages associated with tid
+    	while(it.hasNext()){
+    		PageId pid = it.next();
+    		if(pages.get(pid).isDirty()!=null){
+    			System.out.println("page is dirty");
+    			flushPage(pid);
+    		} 
+    	}
     }
 
     /**
@@ -398,8 +412,9 @@ public class BufferPool {
     	private Permissions perm = null;
     	//transaction that currently have lock on the page
     	private Vector<TransactionId> tidVec = new Vector<TransactionId>();
+    	private Vector<TransactionId> waitVec = new Vector<TransactionId>();
     	
-        public synchronized void acquireLock(TransactionId tid, Permissions perm){
+        public synchronized void acquireLock(TransactionId tid, Permissions perm) throws TransactionAbortedException{
         	boolean waiting = true;
     		while(waiting){     			
     			//page currently not accepting any locks
@@ -407,11 +422,15 @@ public class BufferPool {
     				return;
     			}
     			//not in use
-    			else if(!inUse && !complete){ 
+    			else if(!inUse){ 
                		inUse = true;
                		waiting = false;
                		this.perm = perm;
+               		if(waitVec.contains(tid)){
+               			waitVec.remove(tid);
+               		}
                		tidVec.add(tid);
+               		System.out.println("acquired lock");
                	}else{  
                		//read only accesses
                		if(this.perm.equals(Permissions.READ_ONLY) && perm.equals(Permissions.READ_ONLY)){
@@ -419,19 +438,34 @@ public class BufferPool {
                			tidVec.add(tid);
                		//check if upgrade
                		}else if(perm.equals(Permissions.READ_WRITE) && tidVec.contains(tid) && this.perm.equals(Permissions.READ_ONLY)){
-               			waiting = false;
-    	        		this.perm = perm;
+               		    if(tidVec.size()==1){ 
+               		    	waiting = false;
+               		    	this.perm = perm;
+               		    //if there are other transaction reading the page, the request must wait
+               		    }else{
+    	               		try{
+    	    					wait(100);
+    	    				}catch(InterruptedException e) {}
+    	               		if(inUse){
+    	               			throw new TransactionAbortedException();	               			
+    	               		}               		    	
+               		    }
     	        	//same transaction
     	        	}else if(tidVec.contains(tid)){
     	        		waiting = false;
     	        	//must wait
     	        	}else{
 	               		try{
-	    					wait();
+	    					wait(100);
 	    				}catch(InterruptedException e) {}
+	               		if(inUse){
+	               			System.out.println("deadlock detected");
+	               			throw new TransactionAbortedException();	               			
+	               		}
                		}
                	}	            
-    		}			
+    		}
+    		//return n;
         }
 
         public synchronized void releaseLock() {
