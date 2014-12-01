@@ -100,7 +100,7 @@ public class BufferPool {
 			accessAr.remove(pid);
 			accessAr.put(pid, accessNum++);
 			pageToReturn = pages.get(pid);
-			System.out.println("page was found in buffer: "+pageToReturn.getId());
+			//System.out.println("page was found in buffer: "+pageToReturn.getId());
 			//lock manager must already exist
 			lockManagers.get(pid).acquireLock(tid, perm);
 			
@@ -109,7 +109,7 @@ public class BufferPool {
 			int t = pid.getTableId();
 		    DbFile f = Database.getCatalog().getDatabaseFile(t);
 		    pageToReturn = f.readPage(pid);
-		    System.out.println("page was found in disk: "+pageToReturn.getId());
+		    //System.out.println("page was found in disk: "+pageToReturn.getId());
 		    
 		    //if there is no space in the buffer pool, evict page
 		    if(maxPages==pages.size()){
@@ -185,7 +185,7 @@ public class BufferPool {
     	
     	Set<PageId> dirtyPages = tidMap.get(tid);
     	if(dirtyPages==null || dirtyPages.isEmpty()){
-    		System.out.println("no dirtyPages");
+    		//System.out.println("no dirtyPages");
     		return;
     	}
     	Iterator<PageId> it = dirtyPages.iterator(); 
@@ -334,17 +334,16 @@ public class BufferPool {
         //set of pages associated with tid
     	Set<PageId> dirtyPages = tidMap.get(tid);
     	if(dirtyPages==null || dirtyPages.isEmpty()){
-    		System.out.println("no dirtyPages");
+    		//System.out.println("no dirtyPages");
     		return;
-    	}
-    	//System.out.println("size of dirtyPages Set: "+dirtyPages.size());
+    	}    	
     	Iterator<PageId> it = dirtyPages.iterator();    	
     	
     	//flush dirty pages associated with tid
     	while(it.hasNext()){
     		PageId pid = it.next();
     		if(pages.get(pid).isDirty()!=null){
-    			System.out.println("page is dirty");
+    			//System.out.println("page is dirty");
     			flushPage(pid);
     		} 
     	}
@@ -464,7 +463,7 @@ public class BufferPool {
     	    					Thread.sleep(100);
     	    				}catch(InterruptedException e) {}
     	               		if(inUse){
-    	               			System.out.println("deadlock detected");
+    	               			//System.out.println("deadlock detected");
     	               			waitVec.remove(tid);
     	               			throw new TransactionAbortedException();	               			
     	               		}               		    	
@@ -480,7 +479,7 @@ public class BufferPool {
 	    					Thread.sleep(100);
 	    				}catch(InterruptedException e) {}
 	               		if(inUse){
-	               			System.out.println("deadlock detected");
+	               			//System.out.println("deadlock detected");
 	               			waitVec.remove(tid);
 	               			throw new TransactionAbortedException();	               			
 	               		}
