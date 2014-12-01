@@ -163,6 +163,14 @@ public class BufferPool {
      */
     public boolean holdsLock(TransactionId tid, PageId p) {
     	return lockManagers.get(p).tidVec.contains(tid);
+    }    
+    
+    
+    /*
+     * Return the number of transactions currently holding lock on the specified page
+     */
+    public int numTransactions(PageId p){
+    	return lockManagers.get(p).num;
     }
 
     /**
@@ -189,9 +197,11 @@ public class BufferPool {
     		while(it.hasNext()){
     			//replace the page in bufferpool with the corresponding page from disk
     			PageId pid = it.next();
-    		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
-    		    Page diskPage = f.readPage(pid);    		    
-    		    pages.put(pid, diskPage);    	   		    
+    			if(pages.get(pid).isDirty()!=null){
+	    		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
+	    		    Page diskPage = f.readPage(pid);    		    
+	    		    pages.put(pid, diskPage);
+    			}
     		}  
     	}    	
     	tidMap.remove(tid);
@@ -404,17 +414,20 @@ public class BufferPool {
     	}catch(IOException e){
     		throw new DbException("cannot evit page");
     	}
-    }
+    } 
     
     static class LockManager {
     	private boolean inUse = false;
     	private boolean complete = false;
     	private Permissions perm = null;
-    	//transaction that currently have lock on the page
+    	//transactions that currently have lock on the page
     	private Vector<TransactionId> tidVec = new Vector<TransactionId>();
+    	//transactions that are waiting
     	private Vector<TransactionId> waitVec = new Vector<TransactionId>();
+    	//number of transactions that currently have lock on the page (counting upgrade and shared)
+    	private int num = 0;
     	
-        public synchronized void acquireLock(TransactionId tid, Permissions perm) throws TransactionAbortedException{
+        public void acquireLock(TransactionId tid, Permissions perm) throws TransactionAbortedException{
         	boolean waiting = true;
     		while(waiting){     			
     			//page currently not accepting any locks
@@ -430,48 +443,57 @@ public class BufferPool {
                			waitVec.remove(tid);
                		}
                		tidVec.add(tid);
-               		System.out.println("acquired lock");
+               		num++;
+               		//System.out.println("acquired lock");
                	}else{  
                		//read only accesses
                		if(this.perm.equals(Permissions.READ_ONLY) && perm.equals(Permissions.READ_ONLY)){
                			waiting = false;
                			tidVec.add(tid);
+               			num++;
                		//check if upgrade
                		}else if(perm.equals(Permissions.READ_WRITE) && tidVec.contains(tid) && this.perm.equals(Permissions.READ_ONLY)){
                		    if(tidVec.size()==1){ 
                		    	waiting = false;
                		    	this.perm = perm;
-               		    //if there are other transaction reading the page, the request must wait
+               		    	num++;
+               		    //if there are other transaction reading the page, request must wait
                		    }else{
+               		    	waitVec.add(tid);
     	               		try{
-    	    					wait(100);
+    	    					Thread.sleep(100);
     	    				}catch(InterruptedException e) {}
     	               		if(inUse){
+    	               			System.out.println("deadlock detected");
+    	               			waitVec.remove(tid);
     	               			throw new TransactionAbortedException();	               			
     	               		}               		    	
                		    }
     	        	//same transaction
     	        	}else if(tidVec.contains(tid)){
     	        		waiting = false;
-    	        	//must wait
+    	        		num++;
+    	        	//request must wait
     	        	}else{
+    	        		waitVec.add(tid);
 	               		try{
-	    					wait(100);
+	    					Thread.sleep(100);
 	    				}catch(InterruptedException e) {}
 	               		if(inUse){
 	               			System.out.println("deadlock detected");
+	               			waitVec.remove(tid);
 	               			throw new TransactionAbortedException();	               			
 	               		}
                		}
                	}	            
     		}
-    		//return n;
         }
-
+        
         public synchronized void releaseLock() {
             inUse = false;            
             this.perm = null;
-            tidVec.clear();            
+            tidVec.clear();
+            num = 0;
             notifyAll(); //once done, notify threads that are waiting
         }
     }
