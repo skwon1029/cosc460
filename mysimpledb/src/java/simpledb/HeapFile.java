@@ -126,31 +126,35 @@ public class HeapFile implements DbFile {
 	        	p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
 	        	p.insertTuple(t);
 	        	result.add(p);  
-	        	return result;        		
+	        	return result;
+	        
+	        //release lock if we just acquired the lock
+        	}else{
+        		if(buffer.numTransactions(pid)==1){
+        			buffer.releasePage(tid, pid);
+        		}
         	}
-        	buffer.releasePage(tid, pid);
         }
         synchronized(this){
-		    //if there aren't any pages with space
-		    //create a new page in the file
+		    //if there aren't any pages with space create a new page
 		    byte[] newPageData = HeapPage.createEmptyPageData();
 		    HeapPageId newPid = new HeapPageId(tableId,numPages());
-		    HeapPage newPage = new HeapPage(newPid,newPageData);
-		     
-		    //insert tuple to the new page
-		    newPage.insertTuple(t);        
-		    newPageData = newPage.getPageData();
-		    //add the new page to file      
+		    
+		    //write the page to disk
 		    try{ 
 		    	OutputStream output = new BufferedOutputStream(new FileOutputStream(f,true));
 			    output.write(newPageData);
 			    output.flush();
-			    output.close();
-			    result.add(newPage);
-			    return result;
+			    output.close();			    
 		    } catch(IOException e){
 		     	throw new IOException("cannot add new page");
 		    }  
+		    
+		    //insert tuple to the new page
+		    p = (HeapPage)buffer.getPage(tid, newPid, Permissions.READ_WRITE);
+		    p.insertTuple(t); 
+		    result.add(p);
+		    return result;
         }
     }
 
@@ -262,4 +266,3 @@ public class HeapFile implements DbFile {
         return result;
     }
 }
-
