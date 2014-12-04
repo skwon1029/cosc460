@@ -123,16 +123,15 @@ public class HeapFile implements DbFile {
         	
         	//if the page has space, insert tuple
         	if(p.getNumEmptySlots()!=0){
-	        	p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
-	        	p.insertTuple(t);
+	        	//upgrade permission
+        		p = (HeapPage)buffer.getPage(tid, pid, Permissions.READ_WRITE);
+        		p.insertTuple(t);        		
 	        	result.add(p);  
 	        	return result;
-	        
+        	}
 	        //release lock if we just acquired the lock
-        	}else{
-        		if(buffer.numTransactions(pid)==1){
-        			buffer.releasePage(tid, pid);
-        		}
+        	if(buffer.numTransactions(pid)==1){
+        		buffer.releasePage(tid, pid);        	
         	}
         }
         synchronized(this){
@@ -148,8 +147,7 @@ public class HeapFile implements DbFile {
 			    output.close();			    
 		    } catch(IOException e){
 		     	throw new IOException("cannot add new page");
-		    }  
-		    
+		    }  		    
 		    //insert tuple to the new page
 		    p = (HeapPage)buffer.getPage(tid, newPid, Permissions.READ_WRITE);
 		    p.insertTuple(t); 
@@ -202,17 +200,19 @@ public class HeapFile implements DbFile {
     			if(heapItr==null){
 					h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
 					heapItr = h.iterator();
-					readPages = 1;
-					
+					readPages = 1;				
     			}    			
+    			
     			//return true if there are tuples left in current page 
     			if(heapItr.hasNext()){
-    				h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_WRITE);
     				return true;
     			}   			
     			//return false if current page is the last page
     			if(readPages==numPages()){
-    				buffer.releasePage(t, pid);
+    				//release lock if we just acquired the lock
+    	        	if(buffer.numTransactions(pid)==1){
+    	        		buffer.releasePage(t, pid);        	
+    	        	}
     				return false;
     			}    			
     			//skip empty pages and see if there are any tuples
@@ -221,45 +221,54 @@ public class HeapFile implements DbFile {
     				pid = new HeapPageId(tableId,pid.pageNumber()+1);
     				h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_ONLY);
     				readPages++;
-    				heapItr = h.iterator();    					
+    				heapItr = h.iterator(); 
     				if(heapItr.hasNext()){
-    					h = (HeapPage)buffer.getPage(t,pid,Permissions.READ_WRITE);
-    					heapItr = h.iterator();
     					return true;
-    				}    	    				
+    				}
+    				if(buffer.numTransactions(pid)==1){
+    	        		buffer.releasePage(t, pid);        	
+    	        	}
     			}
     			return false;    			
     		}
     		
     		@Override
-    		public synchronized Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException{
+    		public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException{
     			if(!hasNext()){
     				throw new NoSuchElementException();
     			}
     			Tuple result;
     			if(heapItr.hasNext()){
     				result=heapItr.next();
+    				if(buffer.numTransactions(pid)==1){
+    	        		buffer.releasePage(t, pid);        	
+    	        	}
     				return result;
     			}
+    			
 	    		throw new NoSuchElementException();
     		}
     		
     		@Override
     		public void rewind() throws DbException, TransactionAbortedException{
+    			buffer = Database.getBufferPool();
+    			pid = new HeapPageId(tableId,0);
     			h = null;
     			heapItr = null;
     			readPages = 0;
-    			buffer.releasePage(t, pid);
-				pid = new HeapPageId(tableId,0);
+    			//buffer.releasePage(t, pid);
+							
     		}
     		
     		@Override
     		public void close(){
+    			buffer = null;
+    			pid = null;
     			h = null;
     			heapItr = null;
     			open = false;
     			readPages = 0;
-    			buffer.releasePage(t, pid);
+    			//buffer.releasePage(t, pid);
     		}
     	}     
     	DbFileIterator result = new tempIterator();

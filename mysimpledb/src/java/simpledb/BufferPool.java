@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,18 +40,15 @@ public class BufferPool {
     public static final int DEFAULT_PAGES = 50;
     
     private HashMap<PageId,Page> pages;
-    private int maxPages;	//maximum number of pages
-    private HashMap<PageId,Integer> accessAr;
-    private int accessNum;	//see evictPage() for description
+    private int maxPages;						//maximum number of pages
+    private HashMap<PageId,Integer> accessAr;	//see evictPage() for description
+    private int accessNum;						//see evictPage() for description
     
-    /*
-     * ArrayList consists of: TrasactionId, boolean(granted/waiting), Permissions(mode)
-     * If pid not in lockTable, there is not lock on the page 
-     */
+    //Keep track of pages and their lock managers
     private ConcurrentHashMap<PageId,LockManager> lockManagers;
         
     //Keep track of which transaction accessed/modified which page
-    private HashMap<TransactionId,Set<PageId>> tidMap;
+    private ConcurrentHashMap<TransactionId,Set<PageId>> tidMap;
     
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -63,7 +61,7 @@ public class BufferPool {
         accessNum = 1;
         maxPages = numPages;    
         lockManagers = new ConcurrentHashMap<PageId,LockManager>();
-        tidMap = new HashMap<TransactionId,Set<PageId>>();
+        tidMap = new ConcurrentHashMap<TransactionId,Set<PageId>>();
     }
 
     public static int getPageSize() {
@@ -97,12 +95,14 @@ public class BufferPool {
 		
 		//page found in the buffer
 		if(pages.containsKey(pid)){
-			accessAr.remove(pid);
-			accessAr.put(pid, accessNum++);
-			pageToReturn = pages.get(pid);
-			//System.out.println("page was found in buffer: "+pageToReturn.getId());
-			//lock manager must already exist
-			lockManagers.get(pid).acquireLock(tid, perm);
+			synchronized(this){
+				accessAr.remove(pid);
+				accessAr.put(pid, accessNum++);
+				pageToReturn = pages.get(pid);			
+				//System.out.println("page was found in buffer: "+pageToReturn.getId());
+				//lock manager must already exist
+				lockManagers.get(pid).acquireLock(tid, perm);
+			}
 			
 		//page not in the buffer
 		}else{      
@@ -115,22 +115,27 @@ public class BufferPool {
 		    if(maxPages==pages.size()){
 		     	evictPage();
 		    }
-		    pages.put(pid, pageToReturn);
-	        accessAr.put(pid, accessNum++);
+		    synchronized(this){
+		    	pages.put(pid, pageToReturn);
+		    	accessAr.put(pid, accessNum++);
+		    }
 	        
 	        //create lock manager for the page
-	        LockManager newLockManager = new LockManager();	        
-	        lockManagers.put(pid, newLockManager);
-	        newLockManager.acquireLock(tid, perm);
+	        LockManager newLockManager = new LockManager();	 
+	        synchronized(this){
+	        	lockManagers.put(pid, newLockManager);
+	        	newLockManager.acquireLock(tid, perm);
+	        }	        
 		}	
-		
-		//add information to tidMap
-		if(!tidMap.containsKey(tid)){
-			Set<PageId> s = new HashSet<PageId>();
-			s.add(pid);
-			tidMap.put(tid, s);
-		}else{
-			tidMap.get(tid).add(pid);
+		synchronized(this){
+			//add information to tidMap
+			if(!tidMap.containsKey(tid)){
+				Set<PageId> s = new HashSet<PageId>();
+				s.add(pid);
+				tidMap.put(tid, s);			
+			}else{
+				tidMap.get(tid).add(pid);
+			}
 		}
 		
 		return pageToReturn;		
@@ -146,7 +151,7 @@ public class BufferPool {
      * @param pid the ID of the page to unlock
      */
     public void releasePage(TransactionId tid, PageId pid) { 
-    	lockManagers.get(pid).releaseLock();
+    	lockManagers.get(pid).releaseLock(tid);
     }
 
     /**
@@ -162,12 +167,12 @@ public class BufferPool {
      * Return true if the specified transaction has a lock on the specified page
      */
     public boolean holdsLock(TransactionId tid, PageId p) {
-    	return lockManagers.get(p).tidVec.contains(tid);
-    }    
-    
+    	return lockManagers.get(p).txns.get(tid);
+    }        
     
     /*
      * Return the number of transactions currently holding lock on the specified page
+     * Used in HeapFile.java to see if the lock was just acquired
      */
     public int numTransactions(PageId p){
     	return lockManagers.get(p).num;
@@ -183,41 +188,44 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid, boolean commit)
             throws IOException {
     	
-    	Set<PageId> dirtyPages = tidMap.get(tid);
+    	Set<PageId> dirtyPages = tidMap.get(tid);    	
+    	
     	if(dirtyPages==null || dirtyPages.isEmpty()){
-    		//System.out.println("no dirtyPages");
     		return;
     	}
+    	
     	Iterator<PageId> it = dirtyPages.iterator(); 
     	
     	if(commit){
     		flushPages(tid);
+    	
     	}else{    	
     		//revert any changes made by tid
     		while(it.hasNext()){
     			//replace the page in bufferpool with the corresponding page from disk
     			PageId pid = it.next();
     			if(pages.get(pid).isDirty()!=null){
-	    		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
-	    		    Page diskPage = f.readPage(pid);    		    
-	    		    pages.put(pid, diskPage);
+    				synchronized(this){
+		    		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
+		    		    Page diskPage = f.readPage(pid); 	    		    
+	    		    	pages.put(pid, diskPage);
+	    		    }
     			}
     		}  
-    	}    	
-    	tidMap.remove(tid);
+    	}
     	
     	//release locks/requests
     	it = dirtyPages.iterator();
     	while(it.hasNext()){
     		PageId pid = it.next();
-    		releasePage(tid,pid);
 	    	LockManager lm = lockManagers.get(pid);
-	    	//stop waiting lock requests from acquiring lock  
-	    	lm.complete = true;
-	    	//release current locks
-	    	lm.waitVec.remove(tid);
-	    	//lm.releaseLock();
-	    	
+	    	synchronized(this){
+		    	lm.complete = true;		//stop waiting lock requests from acquiring lock
+		    	releasePage(tid,pid);
+	    	}
+    	}        
+    	synchronized(this){
+    		tidMap.remove(tid);
     	}
     }
 
@@ -419,81 +427,145 @@ public class BufferPool {
     	private boolean inUse = false;
     	private boolean complete = false;
     	private Permissions perm = null;
-    	//transactions that currently have lock on the page
-    	private Vector<TransactionId> tidVec = new Vector<TransactionId>();
-    	//transactions that are waiting
-    	private Vector<TransactionId> waitVec = new Vector<TransactionId>();
     	//number of transactions that currently have lock on the page (counting upgrade and shared)
-    	private int num = 0;
-    	
+    	private int num = 0;    	
+    	//keeps track of all the transactions that either acquired or are waiting for the lock
+    	//boolean value true means the transaction has the lock, false means it's waiting 
+    	private ConcurrentHashMap<TransactionId,Boolean> txns = new ConcurrentHashMap<TransactionId,Boolean>();
+    	    	
         public void acquireLock(TransactionId tid, Permissions perm) throws TransactionAbortedException{
-        	boolean waiting = true;
-    		while(waiting){     			
-    			//page currently not accepting any locks
+        	boolean waiting = true;	    		
+        	//page currently not accepting any locks
+    		if(complete){
+    			return;
+    		}    			
+    		synchronized(this){
+    			//not in use, therefore acquire lock
+    			if(!inUse){
+    				inUse = true;
+    				waiting = false;
+              		this.perm = perm;
+              		txns.put(tid, true);
+               		num++;
+              		return;
+    			}else{
+    				//different transactions, but read only accesses
+	    			if(this.perm.equals(Permissions.READ_ONLY) && perm.equals(Permissions.READ_ONLY)){
+	              		waiting = false;
+	              		txns.put(tid, true);
+	               		num++;
+	               		return;
+	               	//same transaction, same permission
+	    			}else if(perm.equals(this.perm) && txns.containsKey(tid) && txns.get(tid)){
+		    	       	waiting = false;
+		    	       	num++;
+		    	       	return;
+		    	    //same transaction already has read_write permission and the current request is read_only
+	    			}else if(txns.containsKey(tid) && txns.get(tid) && this.perm.equals(Permissions.READ_WRITE) && perm.equals(Permissions.READ_ONLY)){
+	    				waiting = false;
+		    	       	num++;
+		    	       	return;   			
+	                //same transaction upgrading from read_only to read_write
+	                }else if(txns.size()==1 && perm.equals(Permissions.READ_WRITE) && txns.containsKey(tid) && txns.get(tid) && this.perm.equals(Permissions.READ_ONLY)){
+	                    waiting = false;
+	                    this.perm = perm;
+	                    num++;
+	                    return;	                 
+                   	//otherwise, must wait!
+                   	}else{
+                   		txns.put(tid, false);
+                   	}    				    			
+    			}
+    		}//end of synchronized block checking if available, acquiring lock if possible, and updating queue	
+    		
+    		//if the transaction reaches here, it must busy wait
+    		int waitTime = 0;
+    		while(waiting){
     			if(complete){
     				return;
     			}
-    			//not in use
-    			else if(!inUse){ 
-               		inUse = true;
-               		waiting = false;
-               		this.perm = perm;
-               		if(waitVec.contains(tid)){
-               			waitVec.remove(tid);
-               		}
-               		tidVec.add(tid);
-               		num++;
-               		//System.out.println("acquired lock");
-               	}else{  
-               		//read only accesses
-               		if(this.perm.equals(Permissions.READ_ONLY) && perm.equals(Permissions.READ_ONLY)){
-               			waiting = false;
-               			tidVec.add(tid);
-               			num++;
-               		//check if upgrade
-               		}else if(perm.equals(Permissions.READ_WRITE) && tidVec.contains(tid) && this.perm.equals(Permissions.READ_ONLY)){
-               		    if(tidVec.size()==1){ 
-               		    	waiting = false;
-               		    	this.perm = perm;
-               		    	num++;
-               		    //if there are other transaction reading the page, request must wait
-               		    }else{
-               		    	waitVec.add(tid);
-    	               		try{
-    	    					Thread.sleep(100);
-    	    				}catch(InterruptedException e) {}
-    	               		if(inUse){
-    	               			//System.out.println("deadlock detected");
-    	               			waitVec.remove(tid);
-    	               			throw new TransactionAbortedException();	               			
-    	               		}               		    	
-               		    }
-    	        	//same transaction
-    	        	}else if(tidVec.contains(tid)){
-    	        		waiting = false;
-    	        		num++;
-    	        	//request must wait
-    	        	}else{
-    	        		waitVec.add(tid);
-	               		try{
-	    					Thread.sleep(100);
-	    				}catch(InterruptedException e) {}
-	               		if(inUse){
-	               			//System.out.println("deadlock detected");
-	               			waitVec.remove(tid);
-	               			throw new TransactionAbortedException();	               			
-	               		}
-               		}
-               	}	            
+    			synchronized(this){
+    	    		//not in use, therefore acquire lock
+    	    		if(!inUse){
+    	    			inUse = true;
+    	    			waiting = false;
+    	           		this.perm = perm; 
+                  		txns.put(tid, true);
+    	            	num++;
+    	            	return;
+    	    		}else{
+    	    			//different transactions, but read only accesses
+    	    			if(this.perm.equals(Permissions.READ_ONLY) && perm.equals(Permissions.READ_ONLY)){
+    	              		waiting = false;
+    	              		txns.put(tid, true);
+    	               		num++;
+    	               		return;
+    	               	//same transaction, same permission
+    	    			}else if(perm.equals(this.perm) && txns.containsKey(tid) && txns.get(tid)){
+    		    	       	waiting = false;
+    		    	       	num++;
+    		    	       	return;
+    		    	    //same transaction already has read_write permission and the current request is read_only
+    	    			}else if(txns.containsKey(tid) && txns.get(tid) && this.perm.equals(Permissions.READ_WRITE) && perm.equals(Permissions.READ_ONLY)){
+    	    				waiting = false;
+    		    	       	num++;
+    		    	       	return;   			
+    	                //same transaction upgrading from read_only to read_write
+    	                }else if(txns.size()==1 && perm.equals(Permissions.READ_WRITE) && txns.containsKey(tid) && txns.get(tid) && this.perm.equals(Permissions.READ_ONLY)){
+    	                    waiting = false;
+    	                    this.perm = perm;
+    	                    num++;
+    	                    return;	          
+    	                }    	    			
+    				}
+    			}    			
+    			if(waiting){
+    				//if long wait, throw exception
+    				if(waitTime>5){
+                   		throw new TransactionAbortedException();	    			
+        			}
+    				//sleep for 100 milliseconds
+    				try{
+						Thread.sleep(100);						
+					}catch(InterruptedException e){}
+    				waitTime++;
+    			}   			         
     		}
         }
         
-        public synchronized void releaseLock() {
-            inUse = false;            
-            this.perm = null;
-            tidVec.clear();
-            num = 0;
-            notifyAll(); //once done, notify threads that are waiting
+        public synchronized void releaseLock(TransactionId tid){ 
+        	int running = 0;
+        	        	
+        	//see how many transactions are running
+        	Iterator<Entry<TransactionId,Boolean>> it = txns.entrySet().iterator();
+        	while(it.hasNext()){
+        		Entry<TransactionId,Boolean> e = it.next();
+        		if(e.getValue()){
+        			running++;
+        		}
+        	}
+        	//if there are no running transactions, let waiting transactions acquire the lock
+        	if(running==0){
+        		inUse = false;
+        	}
+        	
+        	if(txns.containsKey(tid)){
+        		//this transaction is the only one running
+	        	if(txns.get(tid) && running==1){
+	        		txns.remove(tid);
+	        		inUse = false;
+	        		this.perm = null;
+	        		num = 0;
+	        	//running but with other transactions also running
+	        	}else if(txns.get(tid) && running>1){
+	        		txns.remove(tid);
+	        		num--;	        	
+	        	//transaction still waiting
+	        	}else if(!txns.get(tid)){
+	        		txns.remove(tid);        		
+	        	}
+        	}
+        	complete = false;
         }
     }
 }
