@@ -201,7 +201,7 @@ public class BufferPool {
     		//replace the page in bufferpool with the corresponding page from disk
     		while(it.hasNext()){    		
     			PageId pid = it.next();
-    			if(pages.get(pid).isDirty()!=null){
+    			if(pages.containsKey(pid) && pages.get(pid).isDirty()!=null){
     				synchronized(this){
 		    		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
 		    		    Page diskPage = f.readPage(pid); 	    		    
@@ -217,10 +217,18 @@ public class BufferPool {
     		Entry<PageId,LockManager> e = lockIt.next();
     		synchronized(this){
 	    		LockManager lm = e.getValue();
-	    		if(lm.txns.containsKey(tid)){
-	    			lm.complete = true;
-	    			releasePage(tid,e.getKey());
-	    			lm.complete = false;	    			
+	    		if(pages.containsKey(e.getKey())){
+		    		Page p = pages.get(e.getKey());
+		    		if(lm.txns.containsKey(tid)){
+		    			
+		    			// use current page contents as the before-image
+		    	        // for the next transaction that modifies this page.
+		    	        p.setBeforeImage();	    			
+		    			
+		    			lm.complete = true;
+		    			releasePage(tid,e.getKey());
+		    			lm.complete = false;	  
+		    		}
 	    		}
     		}
     	}    	
@@ -289,13 +297,11 @@ public class BufferPool {
      * break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-    	Set<PageId> ps = pages.keySet();
-    	Iterator<PageId> it = ps.iterator();
+    	Set<PageId> pageSet = pages.keySet();
+    	Iterator<PageId> it = pageSet.iterator();
     	while(it.hasNext()){
-    		PageId pi = it.next();
-    		if(pages.containsKey(pi)){
-    			flushPage(pi);
-    		}
+    		PageId pid = it.next();
+    		flushPage(pid);    		
     	}
     }
 
@@ -306,8 +312,7 @@ public class BufferPool {
      * cache.
      */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // only necessary for lab6                                                                            // cosc460
+        pages.remove(pid);
     }
 
     /**
@@ -321,7 +326,16 @@ public class BufferPool {
 		    //find dirty page
 		    if(p.isDirty()!=null){
 		    	try{
-		    		HeapFile f = (HeapFile)Database.getCatalog().getDatabaseFile(pid.getTableId());		    		
+		    		HeapFile f = (HeapFile)Database.getCatalog().getDatabaseFile(pid.getTableId());	
+		    		
+		    		// append an update record to the log, with 
+		            // a before-image and after-image.
+		            TransactionId dirtier = p.isDirty();
+		            if (dirtier != null){
+		              Database.getLogFile().logWrite(dirtier, p.getBeforeImage(), p);
+		              Database.getLogFile().force();
+		            }	    		
+		    		
 					f.writePage(p); 					//write page to disk					
 					p.markDirty(false, p.isDirty());	//mark the page clean?	
 					return;

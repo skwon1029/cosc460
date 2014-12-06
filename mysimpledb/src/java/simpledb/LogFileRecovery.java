@@ -93,9 +93,51 @@ class LogFileRecovery {
      * @throws java.io.IOException if tidToRollback has already committed
      */
     public void rollback(TransactionId tidToRollback) throws IOException {
-        readOnlyLog.seek(readOnlyLog.length()); // undoing so move to end of logfile
-
-        // some code goes here
+        Long currentOffset = readOnlyLog.getFilePointer();
+        //long lastCheckpoint = readOnlyLog.readLong();
+        readOnlyLog.seek(LogFile.LONG_SIZE);
+                       
+        while (readOnlyLog.getFilePointer() < readOnlyLog.length()) {
+            int type = readOnlyLog.readInt();
+            long tid = readOnlyLog.readLong();
+            
+            //look for update records associated with the specified transaction
+            switch (type) {
+	            case LogType.BEGIN_RECORD:
+	            	break;
+	            case LogType.COMMIT_RECORD:
+	            	if(tid==tidToRollback.getId()){
+	            		throw new IOException("transaction already commited");
+	            	}
+	            	break;
+	            case LogType.ABORT_RECORD:
+	                break;
+	            case LogType.UPDATE_RECORD:
+	            	Page beforeImg = LogFile.readPageData(readOnlyLog);
+	            	Page afterImg = LogFile.readPageData(readOnlyLog);           	
+	                PageId pid = beforeImg.getId();
+	                int tableId = beforeImg.getId().getTableId();
+	                
+	                if(tid==tidToRollback.getId()){
+		                Database.getCatalog().getDatabaseFile(tableId).writePage(beforeImg);
+		                Database.getBufferPool().discardPage(pid);
+	                }
+	                break;
+	            case LogType.CLR_RECORD:
+	                afterImg = LogFile.readPageData(readOnlyLog); 
+	                break;
+	            case LogType.CHECKPOINT_RECORD:
+	                int count = readOnlyLog.readInt();
+	                readOnlyLog.seek(readOnlyLog.getFilePointer()+count*LogFile.LONG_SIZE);
+	                break;
+	            default:
+	                throw new RuntimeException("Unexpected type!  Type = " + type);            
+            }
+            //long startOfRecord = readOnlyLog.readLong();
+            readOnlyLog.seek(readOnlyLog.getFilePointer()+LogFile.LONG_SIZE);            
+        }
+        // return the file pointer to its original position
+        readOnlyLog.seek(currentOffset);       
     }
 
     /**
