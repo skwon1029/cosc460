@@ -190,27 +190,29 @@ public class BufferPool {
             throws IOException {    	
     	
     	Set<PageId> dirtyPages = tidMap.get(tid);       	 
-    	if(dirtyPages==null || dirtyPages.isEmpty()){return;}
+    	if(dirtyPages==null || dirtyPages.isEmpty()){    		
+    	}
     	
-    	Iterator<PageId> it = dirtyPages.iterator();
-    	if(commit){
-    		System.out.println("\t"+tid+" commit");
-    		flushPages(tid);
-    	}else{    	
-    		System.out.println("\t"+tid+" abort");   
-    		//replace the page in bufferpool with the corresponding page from disk
-    		while(it.hasNext()){    		
-    			PageId pid = it.next();
-    			if(pages.containsKey(pid) && pages.get(pid).isDirty()!=null){
-    				synchronized(this){
-		    		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
-		    		    Page diskPage = f.readPage(pid); 	    		    
-	    		    	pages.put(pid, diskPage);
-	    		    }
-    			}
-    		} 
-    	}    	
-    	it = dirtyPages.iterator();
+    	else{
+	    	Iterator<PageId> it = dirtyPages.iterator();
+	    	if(commit){
+	    		//System.out.println("\t"+tid+" commit");
+	    		flushPages(tid);
+	    	}else{    	
+	    		//System.out.println("\t"+tid+" abort");   
+	    		//replace the page in bufferpool with the corresponding page from disk
+	    		while(it.hasNext()){    		
+	    			PageId pid = it.next();
+	    			if(pages.containsKey(pid) && pages.get(pid).isDirty()!=null){
+	    				synchronized(this){
+			    		    DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
+			    		    Page diskPage = f.readPage(pid); 	    		    
+		    		    	pages.put(pid, diskPage);
+		    		    }
+	    			}
+	    		} 
+	    	}     	
+    	}
     	//drop all locks or lock requests associated with the lock
     	Iterator<Entry<PageId,LockManager>> lockIt = lockManagers.entrySet().iterator();
     	while(lockIt.hasNext()){
@@ -456,7 +458,7 @@ public class BufferPool {
               		this.perm = perm;
               		txns.put(tid, true);
                		num++;
-               		System.out.println(tid+" acquired lock!");
+               		//System.out.println(tid+" acquired lock!");
               		return;
     			}else{
     				//different transactions, but read only accesses
@@ -500,18 +502,22 @@ public class BufferPool {
     	           		this.perm = perm; 
                   		txns.put(tid, true);
     	            	num++;
-    	            	System.out.println(tid+" acquired lock!");
+    	            	//System.out.println(tid+" acquired lock!");
     	            	return;
     	    		}
     			}    			
+    			if(!txns.containsKey(tid)){
+    				return;
+    			}    			
     			if(waiting && !txns.get(tid)){
+    				
     				//if long wait, throw exception
     				if(waitTime>10){
-    					System.out.println(tid+" deadlock detected");
+    					//System.out.println(tid+" deadlock detected");
     					throw new TransactionAbortedException();	    			
         			}
     				//sleep for 100 milliseconds
-    				System.out.println(tid+" waiting...");
+    				//System.out.println(tid+" waiting...");
     				try{
     					Thread.sleep(100);						
 					}catch(InterruptedException e){}
@@ -543,16 +549,16 @@ public class BufferPool {
 	        		inUse = false;
 	        		this.perm = null;
 	        		num = 0;
-	        		System.out.println(tid+" released lock 0");
+	        		//System.out.println(tid+" released lock 0");
 	        	//running but with other transactions also running
 	        	}else if(txns.get(tid) && running>1){
 	        		txns.remove(tid);
 	        		num--;	
-	        		System.out.println(tid+" released lock 1");
+	        		//System.out.println(tid+" released lock 1");
 	        	//transaction still waiting
 	        	}else if(!txns.get(tid)){
 	        		txns.remove(tid); 
-	        		System.out.println(tid+" was waiting but released");
+	        		//System.out.println(tid+" was waiting but released");
 	        	}
         	}
         	//complete = false;
