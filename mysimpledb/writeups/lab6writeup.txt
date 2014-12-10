@@ -5,18 +5,17 @@ Exercise 1.
 
 1. Briefly explain how logging is done in SimpleDB by describing when log records are written to the log.  Use Eclipse search tools to find all uses of the LogFile methods in the SimpleDB source code.
 
-    <Replace this text with your answer>
-
+    Logging is done in BufferPool.java when we're flushing a page, and in Transaction.java when we begin, commit, or abort a transaction.
 
 2. Where is LogFile.force called?  You should include usages inside other LogFile methods.  For each usage, why is it important that force is called?
 
-    <Replace this text with your answer>
-
+    It's called after a log is written when a page flushed in BufferPool.flushPage().
+    It is also called inside LogFile.logCommit, LogFile.logAbort, and LogFile.logCheckpoint.
+    This is because we want the log to be flushed to disk before the transaction is completed.
 
 3. Where is setBeforeImage image called?  
 
-    <Replace this text with your answer>
-
+    It's called in BufferPool.transactionComplete() for every page that the specified transaction has a lock on.
 
 Exercise 4.
 
@@ -43,21 +42,18 @@ After you complete the lab, please answer the following questions.
 
 8. What is your name?  If you work with a partner, be sure to write both of your names.
 
-    <Replace this text with your answer>
+   	Soo Bin Kwon
 
 9. What did you think of this assignment?
 
-    <Replace this text with your answer>
+    Less challenging than the previous labs
 
 10. What was the hardest part of this assignment?
 
-    <Replace this text with your answer>
+    Understanding how LogFile works
 
 11. Describe any missing or incomplete elements of your code.
 
-    <Replace this text with your answer>
-
 12. Roughly how long did you spend working on this lab?
 
-    <Replace this text with your answer>
-
+    4 hours
