@@ -94,19 +94,18 @@ class LogFileRecovery {
      * @throws java.io.IOException if tidToRollback has already committed
      */
     public void rollback(TransactionId tidToRollback) throws IOException {
-    	Long currentOffset = readOnlyLog.getFilePointer();
-
-        readOnlyLog.seek(0);
-        readOnlyLog.readLong();
+    	long currentOffset = readOnlyLog.getFilePointer();    	
+    	long length = Database.getLogFile().logFile.length();    	
+    	readOnlyLog.seek(length-LogFile.LONG_SIZE);
+    	long offset = readOnlyLog.readLong();
+    	readOnlyLog.seek(offset);
         
-        Set<Page> pagesToUndo = new HashSet<Page>();
-        
-        while(readOnlyLog.getFilePointer() < readOnlyLog.length()) {
-            int type = readOnlyLog.readInt();
+        while(readOnlyLog.getFilePointer() > 0 && readOnlyLog.getFilePointer() < readOnlyLog.length()) {
+        	int type = readOnlyLog.readInt();
             long tid = readOnlyLog.readLong();            
             //look for update records associated with the specified transaction
             switch(type) {
-	            case LogType.BEGIN_RECORD:	
+	            case LogType.BEGIN_RECORD:	            	
 	            	//this if statement seems to change test results
 	            	if(tid==tidToRollback.getId())
 	            		Database.getLogFile().logAbort(tid);
@@ -121,8 +120,11 @@ class LogFileRecovery {
 	            case LogType.UPDATE_RECORD:
 	            	Page beforeImg = LogFile.readPageData(readOnlyLog);
 	            	LogFile.readPageData(readOnlyLog); 
+	            	int tableId = beforeImg.getId().getTableId();
 	            	if(tid==tidToRollback.getId()){
-	            		pagesToUndo.add(beforeImg);
+	            		Database.getCatalog().getDatabaseFile(tableId).writePage(beforeImg);
+	                	Database.getBufferPool().discardPage(beforeImg.getId());
+	                	Database.getLogFile().logCLR(tidToRollback, beforeImg);
 	            	}
 	                break;
 	            case LogType.CLR_RECORD:
@@ -135,22 +137,15 @@ class LogFileRecovery {
 	            default:
 	                throw new RuntimeException("Unexpected type!  Type = " + type);            
             }
-            readOnlyLog.readLong(); 
+            offset = readOnlyLog.readLong();
+            if(offset>LogFile.LONG_SIZE)
+            	readOnlyLog.seek(offset-LogFile.LONG_SIZE);
+            offset = readOnlyLog.readLong();
+            if(offset>0)
+            	readOnlyLog.seek(offset);          
         }
         //return the file pointer to its original position
         readOnlyLog.seek(currentOffset);    
-        
-        //go through the set of pages that need to be undone in reverse order and undo the changes
-        Page[] undoArr = new Page[pagesToUndo.size()];
-        pagesToUndo.toArray(undoArr);
-        int i = undoArr.length-1;
-        for(;i>=0;i--){
-        	Page p = undoArr[i];
-        	PageId pid = p.getId();
-        	int tableId = pid.getTableId();
-        	Database.getCatalog().getDatabaseFile(tableId).writePage(p);
-        	Database.getBufferPool().discardPage(pid);
-        }
     }
 
     /**
@@ -172,13 +167,13 @@ class LogFileRecovery {
         if(lastCheckpoint==-1){
         	lastCheckpoint = LogFile.LONG_SIZE;
         }       
-            	
+        readOnlyLog.seek(lastCheckpoint);
+        
     	/*
     	 * Scan forward from the checkpoint (or start of log file) to build the set of loser transactions
     	 * Re-do updates during this pass
     	 */
         Set<Long> losers = new HashSet<Long>();
-        readOnlyLog.seek(lastCheckpoint);
         while (readOnlyLog.getFilePointer() < readOnlyLog.length()) {
             int type = readOnlyLog.readInt();
             long tid = readOnlyLog.readLong();            
@@ -188,46 +183,45 @@ class LogFileRecovery {
                     break;
                 case LogType.COMMIT_RECORD:
                 case LogType.ABORT_RECORD:
-                	if(losers.contains(tid)){
-                		losers.remove(tid);
-                	}
+                	if(losers.contains(tid))
+                		losers.remove(tid);                	
                     break;
                 case LogType.UPDATE_RECORD:
                     LogFile.readPageData(readOnlyLog);
-                    Page afterImg = LogFile.readPageData(readOnlyLog);                   
-	                int tableId = afterImg.getId().getTableId();
+                    Page afterImg = LogFile.readPageData(readOnlyLog);
+                    int tableId = afterImg.getId().getTableId();
 	                Database.getCatalog().getDatabaseFile(tableId).writePage(afterImg);
 	                break;
                 case LogType.CLR_RECORD:
                     afterImg = LogFile.readPageData(readOnlyLog);
+                    tableId = afterImg.getId().getTableId();
+	                Database.getCatalog().getDatabaseFile(tableId).writePage(afterImg);
                     break;
-                case LogType.CHECKPOINT_RECORD:
+                case LogType.CHECKPOINT_RECORD:                 
                     int count = readOnlyLog.readInt();
-                    readOnlyLog.seek(readOnlyLog.getFilePointer()+count*LogFile.LONG_SIZE);
-	                break;
+                    for (int i = 0; i < count; i++) {
+                        long nextTid = readOnlyLog.readLong();
+                        losers.add(nextTid);
+                    }
+                    break;
                 default:
                     throw new RuntimeException("Unexpected type!  Type = " + type);
             }
-            //long startOfRecord = readOnlyLog.readLong();
-            readOnlyLog.seek(readOnlyLog.getFilePointer()+LogFile.LONG_SIZE);
-            
-        }
-        
+            readOnlyLog.readLong();            
+        }        
         
         /*
          * Un-do the updates of loser transactions
-         */
-        long endOfLog = readOnlyLog.getFilePointer();
+         */        
         if(losers.isEmpty()){}
         else{
         	Iterator<Long> it = losers.iterator();
         	while(it.hasNext()){
-        		readOnlyLog.seek(endOfLog);
-        		TransactionId tid = new TransactionId(it.next());
+        		long tidLong = it.next();
+        		TransactionId tid = new TransactionId(tidLong);        		
         		rollback(tid);
         	}
-        }   	
-
+        }         
         
         //return the file pointer to its original position
         readOnlyLog.seek(currentOffset); 
